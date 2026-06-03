@@ -1,0 +1,19 @@
+{
+  "name": "feishu-agy-bridge",
+  "version": "1.0.0",
+  "description": "Feishu-AGY Bridge daemon",
+  "main": "src/index.js",
+  "type": "module",
+  "scripts": {
+    "start": "node src/index.js",
+    "test": "vitest"
+  },
+  "dependencies": {
+    "@larksuiteoapi/node-sdk": "^1.28.0",
+    "chokidar": "^3.6.0",
+    "dotenv": "^16.4.5"
+  },
+  "devDependencies": {
+    "vitest": "^1.6.0"
+  }
+}
