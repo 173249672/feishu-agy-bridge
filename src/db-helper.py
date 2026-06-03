@@ -48,7 +48,7 @@ def get_latest_pending_step(db_path):
                             "type": "question",
                             "question_data": json.loads(json_bytes.decode('utf-8'))
                         }
-            elif step_type == 8: # TOOL_CALL/PERMISSION_REQUEST
+            elif step_type in (8, 21): # TOOL_CALL/RUN_COMMAND/PERMISSION_REQUEST
                 start_idx = payload.find(b'{"')
                 if start_idx != -1:
                     brace_count = 0
@@ -79,6 +79,8 @@ def get_latest_pending_step(db_path):
                             json_bytes = payload[start_idx:end_idx]
                             tool_data = json.loads(json_bytes.decode('utf-8'))
                             reason = tool_data.get('toolAction') or tool_data.get('toolSummary') or "Requesting tool permission"
+                            if step_type == 21 and tool_data.get('CommandLine'):
+                                reason = f"Proposing command: {tool_data['CommandLine']}"
                             return {
                                 "idx": idx,
                                 "type": "permission",
@@ -89,7 +91,7 @@ def get_latest_pending_step(db_path):
                 return {
                     "idx": idx,
                     "type": "permission",
-                    "reason": "Requesting tool permission"
+                    "reason": "Proposing command" if step_type == 21 else "Requesting tool permission"
                 }
 
         # Detect API error steps (status=3=DONE, step_type=17=MODEL_RESPONSE with error payload)
