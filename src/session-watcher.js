@@ -12,22 +12,26 @@ export class SessionWatcher extends EventEmitter {
   }
 
   start() {
-    const watchPattern = path.join(this.brainDir, '*', '.system_generated', 'logs', 'transcript.jsonl');
-    this.watcher = chokidar.watch(watchPattern, {
+    this.watcher = chokidar.watch(this.brainDir, {
       persistent: true,
       ignoreInitial: false,
+      depth: 4,
     });
 
     this.watcher.on('add', (filePath) => {
-      const sessionId = this.extractSessionId(filePath);
-      this.fileOffsets.set(filePath, 0);
-      this.emit('session:new', { sessionId, filePath });
-      this.readIncrementally(filePath, sessionId);
+      if (filePath.endsWith(path.join('.system_generated', 'logs', 'transcript.jsonl'))) {
+        const sessionId = this.extractSessionId(filePath);
+        this.fileOffsets.set(filePath, 0);
+        this.emit('session:new', { sessionId, filePath });
+        this.readIncrementally(filePath, sessionId);
+      }
     });
 
     this.watcher.on('change', (filePath) => {
-      const sessionId = this.extractSessionId(filePath);
-      this.readIncrementally(filePath, sessionId);
+      if (filePath.endsWith(path.join('.system_generated', 'logs', 'transcript.jsonl'))) {
+        const sessionId = this.extractSessionId(filePath);
+        this.readIncrementally(filePath, sessionId);
+      }
     });
   }
 
