@@ -29,11 +29,9 @@ export class FeishuClient {
         const { action, operator, open_message_id } = data;
         if (!action || !action.value) return {};
         
-        const { action: actionType, sessionId, stepIndex } = action.value;
         const result = await actionHandler({
-          actionType,
-          sessionId,
-          stepIndex,
+          ...action.value,
+          actionType: action.value.action,
           operatorId: operator.open_id,
           messageId: open_message_id
         });

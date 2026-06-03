@@ -30,13 +30,17 @@ export class AGYInjector {
     return messageId;
   }
 
-  switchModel(modelName) {
-    if (!fs.existsSync(this.settingsPath)) {
-      throw new Error(`Settings file not found: ${this.settingsPath}`);
+  getModelsInfo() {
+    let currentModel = 'Unknown';
+    if (fs.existsSync(this.settingsPath)) {
+      try {
+        const settings = JSON.parse(fs.readFileSync(this.settingsPath, 'utf8'));
+        currentModel = settings.model || 'Unknown';
+      } catch (err) {
+        console.error('Failed to read settings.json for current model:', err);
+      }
     }
 
-    const settings = JSON.parse(fs.readFileSync(this.settingsPath, 'utf8'));
-    
     const MODEL_ALIASES = {
       'flash': 'Gemini 3.5 Flash (High)',
       'medium': 'Gemini 3.5 Flash (Medium)',
@@ -44,8 +48,21 @@ export class AGYInjector {
       'gemini': 'Gemini 2.5 Pro',
     };
 
+    return {
+      currentModel,
+      aliases: MODEL_ALIASES
+    };
+  }
+
+  switchModel(modelName) {
+    if (!fs.existsSync(this.settingsPath)) {
+      throw new Error(`Settings file not found: ${this.settingsPath}`);
+    }
+
+    const settings = JSON.parse(fs.readFileSync(this.settingsPath, 'utf8'));
+    const info = this.getModelsInfo();
     const normalized = modelName.trim().toLowerCase();
-    const targetModel = MODEL_ALIASES[normalized] || modelName;
+    const targetModel = info.aliases[normalized] || modelName;
 
     settings.model = targetModel;
     fs.writeFileSync(this.settingsPath, JSON.stringify(settings, null, 2), 'utf8');

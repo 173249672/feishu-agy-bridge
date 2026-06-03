@@ -4,19 +4,58 @@
 
 ## Features
 
-- **Real-time Status Monitoring**: Tails agy session transcripts in real-time.
-- **Interactive Event Cards**: Automatically sends formatted interactive cards to Feishu for key events (tool permission requests, execution errors, step updates, task completion).
-- **Two-way Communication**: Interacts with active agy sessions. Approving or rejecting a tool permission from Feishu card buttons will write to agy's stdin and local IPC message folders.
-- **Model Switching**: Swishing models on the fly using `/model <model-name>` command.
-- **Multi-session Management**: Watches and manages multiple parallel agy sessions.
+- **Real-time Status Monitoring**: Tails agy session `transcript.jsonl` logs in real-time via incremental file reads.
+- **Dual-path Event Detection**: Watches both transcript JSONL logs and SQLite conversation databases (`conversations/*.db`) to detect questions, permission requests, and errors reliably.
+- **Interactive Event Cards**: Automatically sends formatted interactive cards to Feishu for key events (tool permission requests, execution errors, step completions, multi-choice questions).
+- **Two-way Communication**: Interacts with active agy sessions. Approving or rejecting a tool permission from Feishu card buttons writes the response to agy's stdin and injects a message into the local IPC message folder.
+- **Model Switching**: Switches models on the fly using `/model <model-alias>`. With no argument, returns the current model and a list of all available aliases.
+- **Multi-session Management**: Watches and manages multiple parallel agy sessions simultaneously.
+- **Security Authorization**: Only messages from the configured `FEISHU_DEFAULT_CHAT_ID` are allowed to control the bot. All other senders receive an unauthorized error.
+- **macOS PTY Wrapping**: On macOS, new sessions are spawned via Python's `pty` module to allocate a pseudo-terminal, satisfying agy's TTY requirements without deadlocking stdin.
 
 ---
 
 ## Prerequisites
 
 - **Node.js**: v20 or higher.
+- **Python 3**: Required on the host for PTY spawning (macOS) and SQLite database inspection via `src/db-helper.py`.
 - **Antigravity CLI (`agy`)**: Installed and initialized locally.
 - **Feishu Custom App**: An enterprise self-built application with Bot and Event Subscription enabled, specifically with the `card.action.trigger` and `im.message.receive_v1` permissions.
+
+---
+
+## Architecture
+
+```
+Feishu Chat
+    │  (webhook / card action)
+    ▼
+feishu-client.js  ──► messageHandler / actionHandler  (index.js)
+                              │
+              ┌───────────────┼───────────────┐
+              ▼               ▼               ▼
+        SessionRegistry  AGYInjector    spawn agy (PTY)
+              │               │               │
+              └───────┬───────┘               │
+                      ▼                       │
+               SessionWatcher ◄───────────────┘
+               (chokidar)
+               ├── transcript.jsonl  ──► EventClassifier ──► CardBuilder
+               └── conversations/*.db ──► db-helper.py  ──► CardBuilder
+```
+
+### Module Overview
+
+| Module | Responsibility |
+|:---|:---|
+| `src/index.js` | Application entry point; wires all modules together and hosts `messageHandler` / `actionHandler` |
+| `src/feishu-client.js` | Lark SDK wrapper; handles webhooks, sends messages and cards |
+| `src/session-watcher.js` | File system watcher (chokidar) for transcript files and SQLite DBs |
+| `src/event-classifier.js` | Parses JSONL transcript lines and classifies them into event types |
+| `src/card-builder.js` | Builds Feishu interactive card payloads for each event type |
+| `src/agy-injector.js` | Writes IPC message files and updates `settings.json` for model switching |
+| `src/session-registry.js` | In-memory session store; tracks all active sessions and the default session |
+| `src/db-helper.py` | Python script called by `session-watcher.js` to query SQLite conversation DBs for pending questions, permission prompts, and errors |
 
 ---
 
@@ -62,11 +101,27 @@ Type these commands directly in your chat with the bot to manage agy:
 | Command | Action |
 |:---|:---|
 | `/new <prompt>` | Start a new `agy` session with the given initial prompt. |
-| `/list` | List all active agy sessions monitored by the bridge. |
+| `/list` | List all active agy sessions monitored by the bridge. The default session is marked with ⭐. |
 | `/switch <session-id>` | Switch the default active session to route messages to. |
+| `/model` | Show the current model and list all available model aliases. |
 | `/model <model-alias>` | Switch the model (aliases: `flash`, `medium`, `claude`, `gemini`). |
-| `/stop` | Kills the default active session and stops watching its log. |
-| *Plain Text Message* | Routes the message as user input to the default active session. |
+| `/stop` | Kill the default active session and stop watching its log. |
+| *Plain Text Message* | Routes the message as user input to the default active session. Blocked with a warning if the session is currently busy. |
+
+---
+
+## Event Cards
+
+The bridge automatically sends interactive cards to Feishu for the following events:
+
+| Event | Card Color | Description |
+|:---|:---|:---|
+| Permission Request | 🟡 Yellow | agy requests tool execution approval; includes ✅ / ❌ buttons |
+| Error | 🔴 Red | An error occurred in the agy step |
+| Completed / Waiting | 🟢 Green | agy finished a turn and is waiting for input |
+| Session Ended | ⚫ Grey | The agy process exited |
+| Multi-choice Question | 🟣 Violet | agy's `ask_question` tool triggered; shows numbered option buttons |
+| Status Update | 🔵 Blue | General status change notifications |
 
 ---
 
