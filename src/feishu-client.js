@@ -51,11 +51,16 @@ export class FeishuClient {
     await this.wsClient.start();
   }
 
+  getReceiveIdType(id) {
+    if (id.startsWith('ou_')) return 'open_id';
+    return 'chat_id';
+  }
+
   async sendInteractiveCard(chatId, cardPayload) {
     const targetChat = chatId || this.defaultChatId;
     if (!targetChat) return null;
     const response = await this.client.im.v1.message.create({
-      params: { receive_id_type: 'chat_id' },
+      params: { receive_id_type: this.getReceiveIdType(targetChat) },
       data: {
         receive_id: targetChat,
         msg_type: 'interactive',
@@ -78,7 +83,7 @@ export class FeishuClient {
     const targetChat = chatId || this.defaultChatId;
     if (!targetChat) return null;
     await this.client.im.v1.message.create({
-      params: { receive_id_type: 'chat_id' },
+      params: { receive_id_type: this.getReceiveIdType(targetChat) },
       data: {
         receive_id: targetChat,
         msg_type: 'text',
