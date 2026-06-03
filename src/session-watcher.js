@@ -17,7 +17,14 @@ export class SessionWatcher extends EventEmitter {
     this.conversationsDir = path.join(path.dirname(brainDir), 'conversations');
     this.watcher = null;
     this.fileOffsets = new Map();
+    this.knownSessions = new Set();
     this.isReady = false;
+  }
+
+  registerNewSession(sessionId, filePath) {
+    if (this.knownSessions.has(sessionId)) return;
+    this.knownSessions.add(sessionId);
+    this.emit('session:new', { sessionId, filePath });
   }
 
   start() {
@@ -45,13 +52,15 @@ export class SessionWatcher extends EventEmitter {
           }
         }
         this.fileOffsets.set(filePath, startOffset);
-        this.emit('session:new', { sessionId, filePath });
+        this.registerNewSession(sessionId, filePath);
         if (startOffset === 0) {
           this.readIncrementally(filePath, sessionId);
         }
       } else if ((filePath.endsWith('.db') || filePath.endsWith('.db-wal')) && filePath.includes(this.conversationsDir)) {
         const filename = path.basename(filePath);
         const sessionId = filename.endsWith('.db-wal') ? filename.slice(0, -7) : filename.slice(0, -3);
+        const transcriptPath = path.join(this.brainDir, sessionId, '.system_generated', 'logs', 'transcript.jsonl');
+        this.registerNewSession(sessionId, transcriptPath);
         const dbPath = path.join(this.conversationsDir, `${sessionId}.db`);
         this.checkDatabaseForQuestion(dbPath, sessionId);
       }
@@ -60,10 +69,13 @@ export class SessionWatcher extends EventEmitter {
     this.watcher.on('change', (filePath) => {
       if (filePath.endsWith(path.join('.system_generated', 'logs', 'transcript.jsonl'))) {
         const sessionId = this.extractSessionId(filePath);
+        this.registerNewSession(sessionId, filePath);
         this.readIncrementally(filePath, sessionId);
       } else if ((filePath.endsWith('.db') || filePath.endsWith('.db-wal')) && filePath.includes(this.conversationsDir)) {
         const filename = path.basename(filePath);
         const sessionId = filename.endsWith('.db-wal') ? filename.slice(0, -7) : filename.slice(0, -3);
+        const transcriptPath = path.join(this.brainDir, sessionId, '.system_generated', 'logs', 'transcript.jsonl');
+        this.registerNewSession(sessionId, transcriptPath);
         const dbPath = path.join(this.conversationsDir, `${sessionId}.db`);
         this.checkDatabaseForQuestion(dbPath, sessionId);
       }

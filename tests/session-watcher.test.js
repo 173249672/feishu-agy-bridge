@@ -47,4 +47,32 @@ describe('SessionWatcher', () => {
     expect(detectedSessionId).toBe('test-session-123');
     expect(linesReceived).toEqual(['line1', 'line2', 'line3']);
   });
+
+  it('should emit session:new when a .db file is added', async () => {
+    const conversationsDir = path.join(path.dirname(tempDir), 'conversations');
+    fs.mkdirSync(conversationsDir, { recursive: true });
+
+    const watcher = new SessionWatcher(tempDir);
+    let detectedSessionId = null;
+    let detectedFilePath = null;
+
+    watcher.on('session:new', ({ sessionId, filePath }) => {
+      detectedSessionId = sessionId;
+      detectedFilePath = filePath;
+    });
+
+    watcher.start();
+    await new Promise(resolve => watcher.once('ready', resolve));
+
+    const dbFile = path.join(conversationsDir, 'db-session-456.db');
+    fs.writeFileSync(dbFile, 'fake sqlite content');
+
+    await new Promise(resolve => setTimeout(resolve, 300));
+
+    watcher.stop();
+    fs.rmSync(conversationsDir, { recursive: true, force: true });
+
+    expect(detectedSessionId).toBe('db-session-456');
+    expect(detectedFilePath).toBe(path.join(tempDir, 'db-session-456', '.system_generated', 'logs', 'transcript.jsonl'));
+  });
 });
