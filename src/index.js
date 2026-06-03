@@ -114,6 +114,7 @@ watcher.on('session:agy_error', async ({ sessionId, idx, message }) => {
   // Kill the frozen agy process for this session
   const cp = activeProcesses.get(sessionId);
   if (cp) {
+    cp.errorNotified = true;
     try { cp.kill('SIGTERM'); } catch (e) {}
     activeProcesses.delete(sessionId);
   }
@@ -173,6 +174,18 @@ export const messageHandler = async ({ chatId, senderId, text, isP2P }) => {
       let stdoutBuffer = '';
       spawnedQueue.push({ cp, chatId, timestamp: startTime });
 
+      cp.errorNotified = false;
+      const notifyError = async (rawMessage) => {
+        if (cp.errorNotified) return;
+        cp.errorNotified = true;
+        const clean = rawMessage.replace(/\x1b\[[^m]*m|[\x00-\x08\x0e-\x1f\x7f]/g, '').trim();
+        const quotaMatch = clean.match(/Individual quota reached[^.\n]*/);
+        const resourceMatch = clean.match(/RESOURCE_EXHAUSTED[^\n]*/i);
+        const shortError = quotaMatch?.[0] || resourceMatch?.[0] || clean.split('\n').find(l => l.trim()) || clean;
+
+        await feishu.sendTextMessage(chatId, `❌ AGY 启动失败\n\n${shortError.slice(0, 300)}`);
+      };
+
       cp.stdout.on('data', (data) => {
         const text = data.toString();
         console.log(`[AGY Out]: ${text}`);
@@ -198,7 +211,7 @@ export const messageHandler = async ({ chatId, senderId, text, isP2P }) => {
         }
 
         // Fallback: if closed with error and we haven't already notified
-        if (code !== 0 && !errorNotified) {
+        if (code !== 0 && !cp.errorNotified) {
           await notifyError(stdoutBuffer + stderrBuffer || `AGY exited with code ${code}`);
         }
       });

@@ -1,4 +1,13 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
+const { spawnMock } = vi.hoisted(() => ({
+  spawnMock: vi.fn()
+}));
+
+vi.mock('child_process', () => ({
+  spawn: (...args) => spawnMock(...args)
+}));
+
 import { messageHandler, injector, feishu, watcher } from '../src/index.js';
 import { registry } from '../src/session-registry.js';
 import { config } from '../src/config.js';
@@ -7,6 +16,7 @@ import * as CardBuilder from '../src/card-builder.js';
 describe('index.js messageHandler', () => {
   beforeEach(() => {
     vi.restoreAllMocks();
+    spawnMock.mockReset();
     config.feishu.defaultChatId = 'test-chat-id';
   });
 
@@ -132,5 +142,92 @@ describe('index.js session:permission handler', () => {
     expect(sendInteractiveCardSpy).not.toHaveBeenCalled();
 
     registrySpy.mockRestore();
+  });
+});
+
+describe('index.js session:agy_error handler and /new close fallback', () => {
+  beforeEach(() => {
+    vi.restoreAllMocks();
+    spawnMock.mockReset();
+  });
+
+  it('should notify and kill process on session:agy_error', async () => {
+    const mockKill = vi.fn();
+    const mockCp = {
+      stdout: { on: vi.fn() },
+      stderr: { on: vi.fn() },
+      on: vi.fn(),
+      kill: mockKill,
+      errorNotified: false
+    };
+
+    spawnMock.mockReturnValue(mockCp);
+
+    const sendTextMessageSpy = vi.spyOn(feishu, 'sendTextMessage').mockResolvedValue(undefined);
+
+    // 1. Call /new to queue the process
+    await messageHandler({
+      chatId: 'test-chat-id',
+      senderId: 'user-123',
+      text: '/new test session',
+      isP2P: false
+    });
+
+    // 2. Simulate session:new to move mockCp to activeProcesses
+    const newSessionListeners = watcher.rawListeners('session:new');
+    newSessionListeners[0]({ sessionId: 'session-123', filePath: '/fake/path' });
+
+    // Mock session lookup
+    const fakeSession = { feishuChatId: 'test-chat-id', lastErrorIdx: undefined };
+    const registryModule = await import('../src/session-registry.js');
+    const registrySpy = vi.spyOn(registryModule.SessionRegistry.prototype, 'get').mockReturnValue(fakeSession);
+
+    // 3. Trigger session:agy_error listener
+    const errorListeners = watcher.rawListeners('session:agy_error');
+    await errorListeners[0]({ sessionId: 'session-123', idx: 1, message: 'Quota reached' });
+
+    // 4. Verification
+    expect(sendTextMessageSpy).toHaveBeenCalledWith('test-chat-id', expect.stringContaining('Quota reached'));
+    expect(mockKill).toHaveBeenCalledWith('SIGTERM');
+    expect(mockCp.errorNotified).toBe(true);
+
+    registrySpy.mockRestore();
+  });
+
+  it('should send fallback error message on close if not already notified', async () => {
+    let closeHandler;
+    const mockCp = {
+      stdout: { on: vi.fn() },
+      stderr: { on: vi.fn() },
+      on: vi.fn((event, handler) => {
+        if (event === 'close') {
+          closeHandler = handler;
+        }
+      }),
+      errorNotified: false
+    };
+
+    spawnMock.mockReturnValue(mockCp);
+
+    const sendTextMessageSpy = vi.spyOn(feishu, 'sendTextMessage').mockResolvedValue(undefined);
+
+    // Call /new to trigger spawn and register the close handler
+    await messageHandler({
+      chatId: 'test-chat-id',
+      senderId: 'user-123',
+      text: '/new test session',
+      isP2P: false
+    });
+
+    expect(closeHandler).toBeDefined();
+
+    // Trigger the close handler with exit code 1
+    await closeHandler(1);
+
+    expect(sendTextMessageSpy).toHaveBeenCalledWith(
+      'test-chat-id',
+      expect.stringContaining('AGY exited with code 1')
+    );
+    expect(mockCp.errorNotified).toBe(true);
   });
 });
