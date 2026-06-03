@@ -40,6 +40,7 @@ Antigravity CLI (`agy`) 是 Antigravity IDE 的命令行入口。它以交互方
 | `/new <prompt>` | 启动新的 agy 会话（指定目录） |
 | `/list` | 列出当前所有活跃 session |
 | `/switch <session-id>` | 切换默认交互 session |
+| `/model <model-name>` | 切换当前 session 使用的 agy 模型 |
 | `/stop` | 停止当前 session 监听 |
 
 ---
@@ -207,6 +208,21 @@ FEISHU_DEFAULT_CHAT_ID=...  # 默认通知群组
 
 **注意**：当前实验性——需要实际测试 agy 是否会拾取此类外部消息。备选方案是写入 agy 的 stdin 管道（若进程 PID 可知）。
 
+**模型切换（`/model` 命令）**：
+
+用户在飞书发送 `/model <model-name>` 后，注入器将修改 `~/.gemini/antigravity-cli/settings.json` 中的 `model` 字段，agy 会在下一次对话轮次自动拾取新模型配置。
+
+```js
+// 支持的模型名称示例（与 agy 设置中的 label 一致）
+const MODEL_ALIASES = {
+  'flash':   'Gemini 3.5 Flash (High)',
+  'claude':  'Claude Sonnet 4.6 (Thinking)',
+  'gemini':  'Gemini 2.5 Pro',
+};
+```
+
+飞书返回确认卡片：`✅ 模型已切换为 Claude Sonnet 4.6 (Thinking)`
+
 ### 7. `config.js` — 配置管理
 
 通过 `.env` 文件读取：
@@ -307,5 +323,6 @@ feishu-agy-bridge/
 
 ---
 
-*文档版本：v1.0*  
-*日期：2026-06-03*
+*文档版本：v1.1*  
+*日期：2026-06-03*  
+*变更：新增 `/model` 命令支持从飞书切换 agy 模型*
