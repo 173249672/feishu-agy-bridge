@@ -48,7 +48,7 @@ export class FeishuClient {
       eventDispatcher: eventDispatcher,
     });
 
-    await this.wsClient.start();
+    await this.wsClient.start({ eventDispatcher });
   }
 
   getReceiveIdType(id) {
