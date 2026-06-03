@@ -9,6 +9,7 @@ export class SessionWatcher extends EventEmitter {
     this.brainDir = brainDir;
     this.watcher = null;
     this.fileOffsets = new Map();
+    this.isReady = false;
   }
 
   start() {
@@ -18,12 +19,28 @@ export class SessionWatcher extends EventEmitter {
       depth: 4,
     });
 
+    this.watcher.on('ready', () => {
+      this.isReady = true;
+      this.emit('ready');
+    });
+
     this.watcher.on('add', (filePath) => {
       if (filePath.endsWith(path.join('.system_generated', 'logs', 'transcript.jsonl'))) {
         const sessionId = this.extractSessionId(filePath);
-        this.fileOffsets.set(filePath, 0);
+        let startOffset = 0;
+        if (!this.isReady) {
+          try {
+            const stats = fs.statSync(filePath);
+            startOffset = stats.size;
+          } catch (err) {
+            startOffset = 0;
+          }
+        }
+        this.fileOffsets.set(filePath, startOffset);
         this.emit('session:new', { sessionId, filePath });
-        this.readIncrementally(filePath, sessionId);
+        if (startOffset === 0) {
+          this.readIncrementally(filePath, sessionId);
+        }
       }
     });
 

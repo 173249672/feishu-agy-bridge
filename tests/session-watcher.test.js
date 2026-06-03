@@ -29,6 +29,7 @@ describe('SessionWatcher', () => {
     });
 
     watcher.start();
+    await new Promise(resolve => watcher.once('ready', resolve));
 
     // Create session structure
     const sessionDir = path.join(tempDir, 'test-session-123', '.system_generated', 'logs');
