@@ -41,4 +41,17 @@ describe('AGYInjector', () => {
     const settings = JSON.parse(fs.readFileSync(settingsFile, 'utf8'));
     expect(settings.model).toBe('Claude Sonnet 4.6 (Thinking)');
   });
+
+  it('should get correct models info', () => {
+    const injector = new AGYInjector(tempDir, settingsFile);
+    const info = injector.getModelsInfo();
+    expect(info.currentModel).toBe('Gemini 3.5 Flash (High)');
+    expect(info.aliases).toEqual({
+      'flash': 'Gemini 3.5 Flash (High)',
+      'medium': 'Gemini 3.5 Flash (Medium)',
+      'claude': 'Claude Sonnet 4.6 (Thinking)',
+      'gemini': 'Gemini 2.5 Pro',
+    });
+  });
 });
+
