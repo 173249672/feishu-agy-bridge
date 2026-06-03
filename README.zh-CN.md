@@ -91,6 +91,17 @@ feishu-client.js  ──► messageHandler / actionHandler  (index.js)
    ```bash
    npm start
    ```
+4. 如果你要在其他目录（比如 `/path/to/a`）运行项目，并保持当前工作目录不变：
+   ```bash
+   cd /path/to/a
+   node /feishu-agy-bridge/run-from-cwd.js
+   ```
+
+   这样会从 `/feishu-agy-bridge` 加载代码和 `.env`，但 `process.cwd()` 仍然是 `/path/to/a`。
+   ```bash
+   cd /path/to/a
+   AGY_BRAIN_DIR=/other/path/brain AGY_SETTINGS_PATH=/other/path/settings.json node /feishu-agy-bridge/run-from-cwd.js
+   ```
 
 ---
 

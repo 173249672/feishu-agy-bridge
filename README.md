@@ -91,6 +91,17 @@ feishu-client.js  ──► messageHandler / actionHandler  (index.js)
    ```bash
    npm start
    ```
+4. Run from another directory while preserving the current working directory:
+   ```bash
+   cd /path/to/a
+   node /feishu-agy-bridge/run-from-cwd.js
+   ```
+
+   This loads code and `.env` from `/feishu-agy-bridge`, while `process.cwd()` remains `/path/to/a`.
+   ```bash
+   cd /path/to/a
+   AGY_BRAIN_DIR=/other/path/brain AGY_SETTINGS_PATH=/other/path/settings.json node /feishu-agy-bridge/run-from-cwd.js
+   ```
 
 ---
 
