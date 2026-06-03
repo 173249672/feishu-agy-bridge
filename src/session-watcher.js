@@ -93,6 +93,12 @@ export class SessionWatcher extends EventEmitter {
                 idx: res.idx,
                 reason: res.reason
               });
+            } else if (res.type === 'error' && res.message) {
+              this.emit('session:agy_error', {
+                sessionId,
+                idx: res.idx,
+                message: res.message
+              });
             }
           }
         }

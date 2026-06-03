@@ -96,6 +96,29 @@ watcher.on('session:permission', async ({ sessionId, idx, reason }) => {
   session.lastMessageId = msgId;
 });
 
+watcher.on('session:agy_error', async ({ sessionId, idx, message }) => {
+  console.error(`[Watcher][${sessionId}] AGY error at step #${idx}: ${message}`);
+
+  // Find the chatId — look in session registry or fall back to defaultChatId
+  const session = registry.get(sessionId);
+  const targetChatId = session?.feishuChatId || config.feishu.defaultChatId;
+
+  if (!targetChatId) return;
+
+  // Deduplicate by idx
+  if (session && session.lastErrorIdx === idx) return;
+  if (session) session.lastErrorIdx = idx;
+
+  await feishu.sendTextMessage(targetChatId, `❌ AGY 启动失败\n\n${message}`);
+
+  // Kill the frozen agy process for this session
+  const cp = activeProcesses.get(sessionId);
+  if (cp) {
+    try { cp.kill('SIGTERM'); } catch (e) {}
+    activeProcesses.delete(sessionId);
+  }
+});
+
 watcher.on('error', (err) => {
   console.error('[Watcher] Error:', err);
 });
@@ -174,19 +197,9 @@ export const messageHandler = async ({ chatId, senderId, text, isP2P }) => {
           }
         }
 
-        // If process exited quickly with error, notify Feishu
-        if (code !== 0 && elapsed < 10000) {
-          // Combined output (pty merges stdout+stderr)
-          const combined = (stdoutBuffer + stderrBuffer).replace(/\x1b\[[^m]*m|[\x00-\x08\x0e-\x1f\x7f]/g, '').trim();
-          let errorMsg = combined || `AGY exited with code ${code}`;
-          // Try to extract quota error from combined output
-          const quotaMatch = errorMsg.match(/Individual quota reached[^.\n]*/);
-          const resourceMatch = errorMsg.match(/RESOURCE_EXHAUSTED[^\n]*/i);
-          const shortError = quotaMatch?.[0] || resourceMatch?.[0] || errorMsg.split('\n').find(l => l.trim()) || errorMsg;
-
-          await feishu.sendTextMessage(chatId,
-            `❌ AGY 启动失败\n\n${shortError.slice(0, 300)}`
-          );
+        // Fallback: if closed with error and we haven't already notified
+        if (code !== 0 && !errorNotified) {
+          await notifyError(stdoutBuffer + stderrBuffer || `AGY exited with code ${code}`);
         }
       });
       return;

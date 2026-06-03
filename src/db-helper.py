@@ -91,9 +91,33 @@ def get_latest_pending_step(db_path):
                     "type": "permission",
                     "reason": "Requesting tool permission"
                 }
+
+        # Detect API error steps (status=3=DONE, step_type=17=MODEL_RESPONSE with error payload)
+        # These are written even when quota is exhausted and the process is still "running"
+        if step_type == 17 and status == 3:
+            payload_text = payload.decode('utf-8', errors='replace')
+            if 'RESOURCE_EXHAUSTED' in payload_text or 'Individual quota reached' in payload_text:
+                import re
+                # Extract clean human-readable message (stop at protobuf delimiters)
+                quota_match = re.search(r'Individual quota reached[^.\n\x00\x12]*\.?[^.\n\x00\x12]*', payload_text)
+                resource_match = re.search(r'RESOURCE_EXHAUSTED \(code \d+\): ([^\n\x00\x12]+)', payload_text)
+                if quota_match:
+                    error_text = quota_match.group(0).strip().rstrip('\x12').strip()
+                elif resource_match:
+                    error_text = resource_match.group(1).strip()
+                else:
+                    error_text = "API quota exhausted (429)"
+                return {
+                    "idx": idx,
+                    "type": "error",
+                    "message": error_text
+                }
+
+
         return None
     except Exception as e:
         return {"error": str(e)}
+
 
 if __name__ == "__main__":
     if len(sys.argv) < 2:
