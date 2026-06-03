@@ -145,23 +145,48 @@ export const messageHandler = async ({ chatId, senderId, text, isP2P }) => {
         env: cleanEnv
       });
 
-      spawnedQueue.push({ cp, chatId, timestamp: Date.now() });
+      const startTime = Date.now();
+      let stderrBuffer = '';
+      let stdoutBuffer = '';
+      spawnedQueue.push({ cp, chatId, timestamp: startTime });
 
       cp.stdout.on('data', (data) => {
-        console.log(`[AGY Out]: ${data}`);
+        const text = data.toString();
+        console.log(`[AGY Out]: ${text}`);
+        stdoutBuffer += text;
       });
 
       cp.stderr.on('data', (data) => {
-        console.error(`[AGY Err]: ${data}`);
+        const text = data.toString();
+        console.error(`[AGY Err]: ${text}`);
+        stderrBuffer += text;
       });
 
-      cp.on('close', (code) => {
-        console.log(`[AGY Closed] Exit code: ${code}`);
+      cp.on('close', async (code) => {
+        const elapsed = Date.now() - startTime;
+        console.log(`[AGY Closed] Exit code: ${code}, elapsed: ${elapsed}ms`);
+
+        // Remove from activeProcesses
         for (const [sid, processCp] of activeProcesses.entries()) {
           if (processCp === cp) {
             activeProcesses.delete(sid);
             break;
           }
+        }
+
+        // If process exited quickly with error, notify Feishu
+        if (code !== 0 && elapsed < 10000) {
+          // Combined output (pty merges stdout+stderr)
+          const combined = (stdoutBuffer + stderrBuffer).replace(/\x1b\[[^m]*m|[\x00-\x08\x0e-\x1f\x7f]/g, '').trim();
+          let errorMsg = combined || `AGY exited with code ${code}`;
+          // Try to extract quota error from combined output
+          const quotaMatch = errorMsg.match(/Individual quota reached[^.\n]*/);
+          const resourceMatch = errorMsg.match(/RESOURCE_EXHAUSTED[^\n]*/i);
+          const shortError = quotaMatch?.[0] || resourceMatch?.[0] || errorMsg.split('\n').find(l => l.trim()) || errorMsg;
+
+          await feishu.sendTextMessage(chatId,
+            `❌ AGY 启动失败\n\n${shortError.slice(0, 300)}`
+          );
         }
       });
       return;
