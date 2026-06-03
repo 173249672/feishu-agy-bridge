@@ -9,7 +9,7 @@ import { spawn } from 'child_process';
 
 const registry = new SessionRegistry();
 export const injector = new AGYInjector(config.agy.brainDir, config.agy.settingsPath);
-const watcher = new SessionWatcher(config.agy.brainDir);
+export const watcher = new SessionWatcher(config.agy.brainDir);
 const classifier = new EventClassifier();
 export const feishu = new FeishuClient(config.feishu.appId, config.feishu.appSecret, config.feishu.defaultChatId);
 
@@ -82,9 +82,24 @@ watcher.on('session:question', async ({ sessionId, idx, questionData }) => {
   session.lastMessageId = msgId;
 });
 
+watcher.on('session:permission', async ({ sessionId, idx, reason }) => {
+  console.log(`[Watcher][${sessionId}] Permission required at step #${idx}: ${reason}`);
+  const session = registry.get(sessionId);
+  if (!session) return;
+
+  if (session.lastPermissionIdx === idx) return;
+  session.lastPermissionIdx = idx;
+
+  session.status = 'waiting_permission';
+  const card = CardBuilder.buildPermissionCard(sessionId, idx, reason);
+  const msgId = await feishu.sendInteractiveCard(session.feishuChatId, card);
+  session.lastMessageId = msgId;
+});
+
 watcher.on('error', (err) => {
   console.error('[Watcher] Error:', err);
 });
+
 
 export const messageHandler = async ({ chatId, senderId, text, isP2P }) => {
   const input = text.trim();
