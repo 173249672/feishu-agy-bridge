@@ -2,18 +2,26 @@ import { EventEmitter } from 'events';
 import chokidar from 'chokidar';
 import fs from 'fs';
 import path from 'path';
+import { execFile } from 'child_process';
+import { fileURLToPath } from 'url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const projectDir = path.dirname(__dirname);
+const dbHelperPath = path.join(projectDir, 'src', 'db-helper.py');
 
 export class SessionWatcher extends EventEmitter {
   constructor(brainDir) {
     super();
     this.brainDir = brainDir;
+    this.conversationsDir = path.join(path.dirname(brainDir), 'conversations');
     this.watcher = null;
     this.fileOffsets = new Map();
     this.isReady = false;
   }
 
   start() {
-    this.watcher = chokidar.watch(this.brainDir, {
+    this.watcher = chokidar.watch([this.brainDir, this.conversationsDir], {
       persistent: true,
       ignoreInitial: false,
       depth: 4,
@@ -41,6 +49,11 @@ export class SessionWatcher extends EventEmitter {
         if (startOffset === 0) {
           this.readIncrementally(filePath, sessionId);
         }
+      } else if ((filePath.endsWith('.db') || filePath.endsWith('.db-wal')) && filePath.includes(this.conversationsDir)) {
+        const filename = path.basename(filePath);
+        const sessionId = filename.endsWith('.db-wal') ? filename.slice(0, -7) : filename.slice(0, -3);
+        const dbPath = path.join(this.conversationsDir, `${sessionId}.db`);
+        this.checkDatabaseForQuestion(dbPath, sessionId);
       }
     });
 
@@ -48,6 +61,43 @@ export class SessionWatcher extends EventEmitter {
       if (filePath.endsWith(path.join('.system_generated', 'logs', 'transcript.jsonl'))) {
         const sessionId = this.extractSessionId(filePath);
         this.readIncrementally(filePath, sessionId);
+      } else if ((filePath.endsWith('.db') || filePath.endsWith('.db-wal')) && filePath.includes(this.conversationsDir)) {
+        const filename = path.basename(filePath);
+        const sessionId = filename.endsWith('.db-wal') ? filename.slice(0, -7) : filename.slice(0, -3);
+        const dbPath = path.join(this.conversationsDir, `${sessionId}.db`);
+        this.checkDatabaseForQuestion(dbPath, sessionId);
+      }
+    });
+  }
+
+  checkDatabaseForQuestion(filePath, sessionId) {
+    execFile('python3', [dbHelperPath, filePath], (err, stdout, stderr) => {
+      if (err) {
+        console.error(`[Watcher] Error running db-helper: ${err.message}`);
+        return;
+      }
+      try {
+        const output = stdout.trim();
+        if (output && output !== 'null') {
+          const res = JSON.parse(output);
+          if (res) {
+            if (res.type === 'question' && res.question_data) {
+              this.emit('session:question', {
+                sessionId,
+                idx: res.idx,
+                questionData: res.question_data
+              });
+            } else if (res.type === 'permission' && res.reason) {
+              this.emit('session:permission', {
+                sessionId,
+                idx: res.idx,
+                reason: res.reason
+              });
+            }
+          }
+        }
+      } catch (e) {
+        console.error(`[Watcher] Failed to parse db-helper output: ${e.message}, stdout: ${stdout}`);
       }
     });
   }
