@@ -8,13 +8,14 @@ import * as CardBuilder from './card-builder.js';
 import { spawn } from 'child_process';
 
 const registry = new SessionRegistry();
-const injector = new AGYInjector(config.agy.brainDir, config.agy.settingsPath);
+export const injector = new AGYInjector(config.agy.brainDir, config.agy.settingsPath);
 const watcher = new SessionWatcher(config.agy.brainDir);
 const classifier = new EventClassifier();
-const feishu = new FeishuClient(config.feishu.appId, config.feishu.appSecret, config.feishu.defaultChatId);
+export const feishu = new FeishuClient(config.feishu.appId, config.feishu.appSecret, config.feishu.defaultChatId);
 
 const activeProcesses = new Map();
 const spawnedQueue = [];
+const newline = process.platform === 'darwin' ? '\r' : '\n';
 
 watcher.on('session:new', ({ sessionId, filePath }) => {
   console.log(`[Watcher] New session detected: ${sessionId}`);
@@ -27,24 +28,36 @@ watcher.on('session:new', ({ sessionId, filePath }) => {
     if (session) {
       session.feishuChatId = pending.chatId;
     }
+    registry.setDefault(sessionId);
+    console.log(`[Registry] Set default session to ${sessionId} (spawned via /new)`);
   }
 });
 
 watcher.on('line', async ({ sessionId, line }) => {
   console.log(`[Watcher][${sessionId}] ${line}`);
-  const event = classifier.classifyLine(line);
-  if (!event) return;
-
+  
   const session = registry.get(sessionId);
   if (!session) return;
 
+  const event = classifier.classifyLine(line);
+  if (!event) {
+    if (session.status !== 'busy') {
+      session.status = 'busy';
+    }
+    return;
+  }
+
   let card;
   if (event.eventType === 'PERMISSION_REQUIRED') {
+    session.status = 'waiting_permission';
     card = CardBuilder.buildPermissionCard(sessionId, event.stepIndex, event.summary);
   } else if (event.eventType === 'ERROR') {
+    session.status = 'error';
     card = CardBuilder.buildErrorCard(sessionId, event.stepIndex, event.summary);
   } else if (event.eventType === 'COMPLETED') {
-    card = CardBuilder.buildCompletedCard(sessionId, event.stepIndex, event.summary);
+    session.status = 'waiting_input';
+    const isActive = activeProcesses.has(sessionId);
+    card = CardBuilder.buildCompletedCard(sessionId, event.stepIndex, event.summary, isActive);
   } else if (event.eventType === 'STATUS_CHANGE') {
     card = CardBuilder.buildStatusCard(sessionId, event.summary);
   }
@@ -55,13 +68,34 @@ watcher.on('line', async ({ sessionId, line }) => {
   }
 });
 
+watcher.on('session:question', async ({ sessionId, idx, questionData }) => {
+  console.log(`[Watcher][${sessionId}] Question detected at step #${idx}`);
+  const session = registry.get(sessionId);
+  if (!session) return;
+
+  if (session.lastQuestionIdx === idx) return;
+  session.lastQuestionIdx = idx;
+
+  session.status = 'waiting_input';
+  const card = CardBuilder.buildQuestionCard(sessionId, idx, questionData);
+  const msgId = await feishu.sendInteractiveCard(session.feishuChatId, card);
+  session.lastMessageId = msgId;
+});
+
 watcher.on('error', (err) => {
   console.error('[Watcher] Error:', err);
 });
 
-const messageHandler = async ({ chatId, senderId, text, isP2P }) => {
+export const messageHandler = async ({ chatId, senderId, text, isP2P }) => {
   const input = text.trim();
   console.log(`[Feishu] Message from ${senderId} in ${chatId}: ${input}`);
+
+  // Security authorization check: only allow commands from the authorized defaultChatId
+  if (config.feishu.defaultChatId && chatId !== config.feishu.defaultChatId) {
+    console.warn(`[Security] Unauthorized message attempt from chatId: ${chatId}`);
+    await feishu.sendTextMessage(chatId, '❌ You are not authorized to interact with this bot.');
+    return;
+  }
 
   if (input.startsWith('/')) {
     const parts = input.split(' ');
@@ -76,8 +110,24 @@ const messageHandler = async ({ chatId, senderId, text, isP2P }) => {
 
       await feishu.sendTextMessage(chatId, `🚀 Starting new session with prompt: "${arg}"...`);
       
-      const cp = spawn('agy', ['-i', arg], {
-        env: { ...process.env, FORCE_COLOR: '1' }
+      // Clean environment to avoid agent-specific variables causing conflicts
+      const cleanEnv = { ...process.env, FORCE_COLOR: '1' };
+      for (const key of Object.keys(cleanEnv)) {
+        if (key.startsWith('ANTIGRAVITY_') || key.startsWith('CHROME_') || key.startsWith('AGY_BROWSER_')) {
+          delete cleanEnv[key];
+        }
+      }
+
+      // On macOS, we wrap the spawn using python3's pty module to allocate a pseudo-terminal (PTY).
+      // This prevents agy from deadlocking on reading stdin, and satisfies Bubble Tea's TTY requirements.
+      const isMac = process.platform === 'darwin';
+      const cmd = isMac ? 'python3' : 'agy';
+      const spawnArgs = isMac 
+        ? ['-c', 'import pty, sys; pty.spawn(sys.argv[1:])', 'agy', '-i', arg]
+        : ['-i', arg];
+
+      const cp = spawn(cmd, spawnArgs, {
+        env: cleanEnv
       });
 
       spawnedQueue.push({ cp, chatId, timestamp: Date.now() });
@@ -133,7 +183,14 @@ const messageHandler = async ({ chatId, senderId, text, isP2P }) => {
 
     if (command === '/model') {
       if (!arg) {
-        await feishu.sendTextMessage(chatId, '❌ Usage: `/model <model-name>` (e.g. `flash`, `claude`, `gemini`)');
+        const info = injector.getModelsInfo();
+        const availableList = Object.entries(info.aliases)
+          .map(([alias, name]) => `• ${alias}: ${name}`)
+          .join('\n');
+        await feishu.sendTextMessage(
+          chatId,
+          `🤖 Current Model: \`${info.currentModel}\`\n\n📋 Available Models:\n${availableList}\n\nUsage: \`/model <model-name>\``
+        );
         return;
       }
       try {
@@ -172,23 +229,74 @@ const messageHandler = async ({ chatId, senderId, text, isP2P }) => {
   }
 
   defaultSess.feishuChatId = chatId;
+  
+  const cp = activeProcesses.get(defaultSess.id);
+  if (!cp) {
+    await feishu.sendTextMessage(chatId, `❌ The current default session \`${defaultSess.id}\` is not active (no running process). Use \`/switch <session-id>\` or start a new one with \`/new <prompt>\`.`);
+    return;
+  }
+
+  if (defaultSess.status === 'busy') {
+    await feishu.sendTextMessage(chatId, `⏳ 机器人当前正忙于执行任务，请等待本轮任务完成后再输入。您也可以发送 \`/stop\` 中断当前任务。`);
+    return;
+  }
+
   injector.injectMessage(defaultSess.id, input);
 
-  const cp = activeProcesses.get(defaultSess.id);
-  if (cp && cp.stdin.writable) {
-    cp.stdin.write(`${input}\n`);
+  if (cp.stdin.writable) {
+    cp.stdin.write(`${input}${newline}`);
+    console.log(`[Feishu] Forwarded input to session ${defaultSess.id}: ${input}`);
+    defaultSess.status = 'busy';
+  } else {
+    console.error(`[Feishu] Process stdin for session ${defaultSess.id} is not writable!`);
   }
 };
 
-const actionHandler = async ({ actionType, sessionId, stepIndex, operatorId, messageId }) => {
+const actionHandler = async (params) => {
+  const { actionType, sessionId, stepIndex, operatorId, messageId } = params;
   console.log(`[Feishu Action] ${actionType} for session ${sessionId} step #${stepIndex} by ${operatorId}`);
+
+  if (actionType === 'answer') {
+    const { optionIndex, text } = params;
+    console.log(`[Feishu Action] Answer selected: idx=${optionIndex}, text=${text}`);
+    
+    injector.injectMessage(sessionId, text);
+
+    const cp = activeProcesses.get(sessionId);
+    if (cp && cp.stdin.writable) {
+      cp.stdin.write(`\r`);
+    }
+
+    return {
+      toast: {
+        type: 'success',
+        content: `Selected Option ${optionIndex + 1}`
+      },
+      card: {
+        config: { wide_screen_mode: true },
+        header: {
+          template: 'green',
+          title: { tag: 'plain_text', content: `✅ 问题已回答` }
+        },
+        elements: [
+          {
+            tag: 'div',
+            text: {
+              tag: 'lark_md',
+              content: `**会话 ID**: \`${sessionId}\`\n**步骤**: #${stepIndex}\n\n**您的选择**: \n${optionIndex + 1}️⃣ ${text}`
+            }
+          }
+        ]
+      }
+    };
+  }
 
   const responseText = actionType === 'approve' ? 'y' : 'n';
   injector.injectMessage(sessionId, responseText);
 
   const cp = activeProcesses.get(sessionId);
   if (cp && cp.stdin.writable) {
-    cp.stdin.write(`${responseText}\n`);
+    cp.stdin.write(`${responseText}${newline}`);
   }
 
   return {
@@ -222,7 +330,9 @@ async function main() {
   console.log('Feishu-AGY Bridge is running.');
 }
 
-main().catch(err => {
-  console.error('Fatal startup error:', err);
-  process.exit(1);
-});
+if (!process.env.VITEST) {
+  main().catch(err => {
+    console.error('Fatal startup error:', err);
+    process.exit(1);
+  });
+}
