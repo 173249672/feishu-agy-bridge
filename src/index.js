@@ -77,7 +77,6 @@ const messageHandler = async ({ chatId, senderId, text, isP2P }) => {
       await feishu.sendTextMessage(chatId, `🚀 Starting new session with prompt: "${arg}"...`);
       
       const cp = spawn('agy', ['-i', arg], {
-        shell: true,
         env: { ...process.env, FORCE_COLOR: '1' }
       });
 
