@@ -8,10 +8,11 @@ vi.mock('child_process', () => ({
   spawn: (...args) => spawnMock(...args)
 }));
 
-import { messageHandler, injector, feishu, watcher, activeProcesses, spawnedQueue } from '../src/index.js';
+import { messageHandler, injector, feishu, watcher, activeProcesses, spawnedQueue, actionHandler } from '../src/index.js';
 import { registry } from '../src/session-registry.js';
 import { config } from '../src/config.js';
 import * as CardBuilder from '../src/card-builder.js';
+import { settingsManager } from '../src/settings-manager.js';
 import fs from 'fs';
 
 describe('index.js messageHandler', () => {
@@ -21,6 +22,9 @@ describe('index.js messageHandler', () => {
     config.feishu.defaultChatId = 'test-chat-id';
     activeProcesses.clear();
     spawnedQueue.length = 0;
+    settingsManager.set('language', 'en');
+    settingsManager.set('theme', 'default');
+    settingsManager.set('wideScreen', true);
   });
 
   it('should format and return model list when /model is called without argument', async () => {
@@ -250,6 +254,9 @@ describe('Session management index commands', () => {
     config.feishu.defaultChatId = 'test-chat-id';
     activeProcesses.clear();
     spawnedQueue.length = 0;
+    settingsManager.set('language', 'en');
+    settingsManager.set('theme', 'default');
+    settingsManager.set('wideScreen', true);
 
     const registryModule = await import('../src/session-registry.js');
     mockList = vi.spyOn(registryModule.SessionRegistry.prototype, 'list');
@@ -469,5 +476,34 @@ describe('Session management index commands', () => {
     expect(mockKill).toHaveBeenCalledWith('SIGTERM');
     expect(mockRemove).toHaveBeenCalledWith('session-z');
     expect(sendTextMessageSpy).toHaveBeenCalledWith('test-chat-id', expect.stringContaining('Deleted all 1 sessions'));
+  });
+
+  it('should display settings card on /settings', async () => {
+    const sendInteractiveCardSpy = vi.spyOn(feishu, 'sendInteractiveCard').mockResolvedValue('msg-settings');
+
+    await messageHandler({
+      chatId: 'test-chat-id',
+      senderId: 'user-123',
+      text: '/settings',
+      isP2P: false
+    });
+
+    expect(sendInteractiveCardSpy).toHaveBeenCalled();
+    const card = sendInteractiveCardSpy.mock.calls[0][1];
+    expect(card.header.title.content).toContain('Settings');
+  });
+
+  it('should handle settings actions in actionHandler', async () => {
+    const updateCardSpy = vi.spyOn(feishu, 'updateCard').mockResolvedValue(undefined);
+
+    const res = await actionHandler({
+      actionType: 'set_lang',
+      lang: 'en',
+      messageId: 'msg-123'
+    });
+
+    expect(settingsManager.get('language')).toBe('en');
+    expect(updateCardSpy).toHaveBeenCalled();
+    expect(res.toast.content).toBe('Settings updated');
   });
 });

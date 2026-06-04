@@ -8,6 +8,8 @@ import * as CardBuilder from './card-builder.js';
 import { spawn } from 'child_process';
 import fs from 'fs';
 import path from 'path';
+import { t } from './i18n.js';
+import { settingsManager } from './settings-manager.js';
 
 const registry = new SessionRegistry();
 export const injector = new AGYInjector(config.agy.brainDir, config.agy.settingsPath);
@@ -120,7 +122,7 @@ watcher.on('session:agy_error', async ({ sessionId, idx, message }) => {
   if (session && session.lastErrorIdx === idx) return;
   if (session) session.lastErrorIdx = idx;
 
-  await feishu.sendTextMessage(targetChatId, `❌ AGY 启动失败\n\n${message}`);
+  await feishu.sendTextMessage(targetChatId, t('new_fail', message));
 
   // Kill the frozen agy process for this session
   const cp = activeProcesses.get(sessionId);
@@ -188,11 +190,11 @@ export const messageHandler = async ({ chatId, senderId, text, isP2P }) => {
 
     if (command === '/new') {
       if (!arg) {
-        await feishu.sendTextMessage(chatId, '❌ Please specify a prompt. Example: `/new help me write a script`');
+        await feishu.sendTextMessage(chatId, t('new_usage'));
         return;
       }
 
-      await feishu.sendTextMessage(chatId, `🚀 Starting new session with prompt: "${arg}"...`);
+      await feishu.sendTextMessage(chatId, t('new_start', arg));
       
       // Clean environment to avoid agent-specific variables causing conflicts
       const cleanEnv = { ...process.env, FORCE_COLOR: '1' };
@@ -228,7 +230,7 @@ export const messageHandler = async ({ chatId, senderId, text, isP2P }) => {
         const resourceMatch = clean.match(/RESOURCE_EXHAUSTED[^\n]*/i);
         const shortError = quotaMatch?.[0] || resourceMatch?.[0] || clean.split('\n').find(l => l.trim()) || clean;
 
-        await feishu.sendTextMessage(chatId, `❌ AGY 启动失败\n\n${shortError.slice(0, 300)}`);
+        await feishu.sendTextMessage(chatId, t('new_fail', shortError.slice(0, 300)));
       };
 
       cp.stdout.on('data', (data) => {
@@ -266,7 +268,7 @@ export const messageHandler = async ({ chatId, senderId, text, isP2P }) => {
     if (command === '/list') {
       const list = registry.list().sort((a, b) => a.startTime - b.startTime);
       if (list.length === 0) {
-        await feishu.sendTextMessage(chatId, 'No active sessions found.');
+        await feishu.sendTextMessage(chatId, t('list_empty'));
         return;
       }
       const defaultSess = registry.getDefault();
@@ -276,21 +278,21 @@ export const messageHandler = async ({ chatId, senderId, text, isP2P }) => {
         const statusIndicator = isActive ? '🟢' : '⚪';
         return `[${i + 1}] ${isDefault}${statusIndicator} \`${s.id}\` (started: ${s.startTime.toLocaleTimeString()})`;
       });
-      await feishu.sendTextMessage(chatId, `📋 Active Sessions:\n${lines.join('\n')}`);
+      await feishu.sendTextMessage(chatId, `${t('list_header')}\n${lines.join('\n')}`);
       return;
     }
 
     if (command === '/switch') {
       if (!arg) {
-        await feishu.sendTextMessage(chatId, '❌ Usage: `/switch <index or session-id>`');
+        await feishu.sendTextMessage(chatId, t('switch_usage'));
         return;
       }
       const session = resolveSession(arg);
       if (session) {
         registry.setDefault(session.id);
-        await feishu.sendTextMessage(chatId, `✅ Switched default session to \`${session.id}\``);
+        await feishu.sendTextMessage(chatId, t('switch_success', session.id));
       } else {
-        await feishu.sendTextMessage(chatId, `❌ Session \`${arg}\` not found.`);
+        await feishu.sendTextMessage(chatId, t('switch_fail', arg));
       }
       return;
     }
@@ -303,15 +305,15 @@ export const messageHandler = async ({ chatId, senderId, text, isP2P }) => {
           .join('\n');
         await feishu.sendTextMessage(
           chatId,
-          `🤖 Current Model: \`${info.currentModel}\`\n\n📋 Available Models:\n${availableList}\n\nUsage: \`/model <model-name>\``
+          `${t('model_list_header', info.currentModel)}${availableList}${t('model_usage')}`
         );
         return;
       }
       try {
         const chosenModel = injector.switchModel(arg);
-        await feishu.sendTextMessage(chatId, `✅ Model switched to \`${chosenModel}\``);
+        await feishu.sendTextMessage(chatId, t('model_success', chosenModel));
       } catch (err) {
-        await feishu.sendTextMessage(chatId, `❌ Failed to switch model: ${err.message}`);
+        await feishu.sendTextMessage(chatId, t('model_fail', err.message));
       }
       return;
     }
@@ -321,13 +323,13 @@ export const messageHandler = async ({ chatId, senderId, text, isP2P }) => {
       if (arg) {
         session = resolveSession(arg);
         if (!session) {
-          await feishu.sendTextMessage(chatId, `❌ Session \`${arg}\` not found.`);
+          await feishu.sendTextMessage(chatId, t('switch_fail', arg));
           return;
         }
       } else {
         session = registry.getDefault();
         if (!session) {
-          await feishu.sendTextMessage(chatId, 'No active default session.');
+          await feishu.sendTextMessage(chatId, t('stop_no_default'));
           return;
         }
       }
@@ -335,16 +337,16 @@ export const messageHandler = async ({ chatId, senderId, text, isP2P }) => {
       if (cp) {
         try { cp.kill('SIGTERM'); } catch (e) {}
         activeProcesses.delete(session.id);
-        await feishu.sendTextMessage(chatId, `⏹️ Stopped process for session \`${session.id}\``);
+        await feishu.sendTextMessage(chatId, t('stop_success', session.id));
       } else {
-        await feishu.sendTextMessage(chatId, `⚠️ Session \`${session.id}\` is already stopped.`);
+        await feishu.sendTextMessage(chatId, t('stop_already', session.id));
       }
       return;
     }
 
     if (command === '/del') {
       if (!arg) {
-        await feishu.sendTextMessage(chatId, '❌ Usage: `/del <index or session-id>` or `/del all`');
+        await feishu.sendTextMessage(chatId, t('del_usage'));
         return;
       }
       if (arg.toLowerCase() === 'all') {
@@ -360,12 +362,12 @@ export const messageHandler = async ({ chatId, senderId, text, isP2P }) => {
           registry.remove(s.id);
           deletedCount++;
         }
-        await feishu.sendTextMessage(chatId, `🗑️ Deleted all ${deletedCount} sessions.`);
+        await feishu.sendTextMessage(chatId, t('del_all', deletedCount));
         return;
       }
       const session = resolveSession(arg);
       if (!session) {
-        await feishu.sendTextMessage(chatId, `❌ Session \`${arg}\` not found.`);
+        await feishu.sendTextMessage(chatId, t('switch_fail', arg));
         return;
       }
       const cp = activeProcesses.get(session.id);
@@ -375,30 +377,36 @@ export const messageHandler = async ({ chatId, senderId, text, isP2P }) => {
       }
       deleteSessionFiles(session.id);
       registry.remove(session.id);
-      await feishu.sendTextMessage(chatId, `🗑️ Deleted session \`${session.id}\`.`);
+      await feishu.sendTextMessage(chatId, t('del_success', session.id));
       return;
     }
 
-    await feishu.sendTextMessage(chatId, `❌ Unknown command: ${command}`);
+    if (command === '/settings') {
+      const card = CardBuilder.buildSettingsCard();
+      await feishu.sendInteractiveCard(chatId, card);
+      return;
+    }
+
+    await feishu.sendTextMessage(chatId, t('unknown_command', command));
     return;
   }
 
   const defaultSess = registry.getDefault();
   if (!defaultSess) {
-    await feishu.sendTextMessage(chatId, '❌ No active session to reply to. Use `/new <prompt>` to start one.');
+    await feishu.sendTextMessage(chatId, t('no_active_session'));
     return;
   }
 
   defaultSess.feishuChatId = chatId;
-  
+    
   const cp = activeProcesses.get(defaultSess.id);
   if (!cp) {
-    await feishu.sendTextMessage(chatId, `❌ The current default session \`${defaultSess.id}\` is not active (no running process). Use \`/switch <session-id>\` or start a new one with \`/new <prompt>\`.`);
+    await feishu.sendTextMessage(chatId, t('session_not_active', defaultSess.id));
     return;
   }
 
   if (defaultSess.status === 'busy') {
-    await feishu.sendTextMessage(chatId, `⏳ 机器人当前正忙于执行任务，请等待本轮任务完成后再输入。您也可以发送 \`/stop\` 中断当前任务。`);
+    await feishu.sendTextMessage(chatId, t('bot_busy'));
     return;
   }
 
@@ -413,9 +421,31 @@ export const messageHandler = async ({ chatId, senderId, text, isP2P }) => {
   }
 };
 
-const actionHandler = async (params) => {
+export const actionHandler = async (params) => {
   const { actionType, sessionId, stepIndex, operatorId, messageId } = params;
   console.log(`[Feishu Action] ${actionType} for session ${sessionId} step #${stepIndex} by ${operatorId}`);
+
+  if (actionType === 'set_lang' || actionType === 'set_theme' || actionType === 'toggle_widescreen') {
+    if (actionType === 'set_lang') {
+      settingsManager.set('language', params.lang);
+    } else if (actionType === 'set_theme') {
+      settingsManager.set('theme', params.theme);
+    } else if (actionType === 'toggle_widescreen') {
+      settingsManager.set('wideScreen', params.wideScreen);
+    }
+
+    const updatedCard = CardBuilder.buildSettingsCard();
+    feishu.updateCard(messageId, updatedCard).catch(err => {
+      console.error(`Failed to update settings card: ${err.message}`);
+    });
+
+    return {
+      toast: {
+        type: 'success',
+        content: t('settings_save_toast')
+      }
+    };
+  }
 
   if (actionType === 'answer') {
     const { optionIndex, text } = params;
@@ -429,17 +459,17 @@ const actionHandler = async (params) => {
     }
 
     const updatedCard = {
-      config: { wide_screen_mode: true },
+      config: { wide_screen_mode: settingsManager.get('wideScreen') !== false },
       header: {
         template: 'green',
-        title: { tag: 'plain_text', content: '✅ 问题已回答' }
+        title: { tag: 'plain_text', content: t('card_confirm_title') }
       },
       elements: [
         {
           tag: 'div',
           text: {
             tag: 'lark_md',
-            content: `**会话 ID**: \`${sessionId}\`\n**步骤**: #${stepIndex}\n\n**您的选择**: \n${optionIndex + 1}️⃣ ${text}`
+            content: `**${t('card_session_id')}**: \`${sessionId}\`\n**${t('card_step')}**: #${stepIndex}\n\n**${t('card_your_choice')}**: \n${optionIndex + 1}️⃣ ${text}`
           }
         }
       ]
@@ -452,7 +482,7 @@ const actionHandler = async (params) => {
     return {
       toast: {
         type: 'success',
-        content: `Selected Option ${optionIndex + 1}`
+        content: `${t('card_question_btn_prefix')}${optionIndex + 1}`
       }
     };
   }
@@ -466,17 +496,17 @@ const actionHandler = async (params) => {
   }
 
   const updatedCard = {
-    config: { wide_screen_mode: true },
+    config: { wide_screen_mode: settingsManager.get('wideScreen') !== false },
     header: {
       template: actionType === 'approve' ? 'green' : 'grey',
-      title: { tag: 'plain_text', content: `✅ AGY 权限已${actionType === 'approve' ? '确认' : '拒绝'}` }
+      title: { tag: 'plain_text', content: actionType === 'approve' ? t('card_permission_approved') : t('card_permission_rejected') }
     },
     elements: [
       {
         tag: 'div',
         text: {
           tag: 'lark_md',
-          content: `**会话 ID**: \`${sessionId}\`\n**步骤**: #${stepIndex}\n\n**结果**: 已由用户进行${actionType === 'approve' ? '确认' : '拒绝'}。`
+          content: `**${t('card_session_id')}**: \`${sessionId}\`\n**${t('card_step')}**: #${stepIndex}\n\n**${t('card_result')}**: ${t('card_permission_handled_suffix')}`
         }
       }
     ]

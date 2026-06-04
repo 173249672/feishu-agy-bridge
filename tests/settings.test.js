@@ -6,6 +6,11 @@ import fs from 'fs';
 describe('settings-manager.js', () => {
   beforeEach(() => {
     vi.restoreAllMocks();
+    settingsManager.settings = {
+      language: 'zh',
+      theme: 'default',
+      wideScreen: true
+    };
   });
 
   it('should initialize with default settings', () => {
