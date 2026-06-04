@@ -9,9 +9,12 @@
 - **Interactive Event Cards**: Automatically sends formatted interactive cards to Feishu for key events (tool permission requests, execution errors, step completions, multi-choice questions).
 - **Two-way Communication**: Interacts with active agy sessions. Approving or rejecting a tool permission from Feishu card buttons writes the response to agy's stdin and injects a message into the local IPC message folder.
 - **Model Switching**: Switches models on the fly using `/model <model-alias>`. With no argument, returns the current model and a list of all available aliases.
-- **Multi-session Management**: Watches and manages multiple parallel agy sessions simultaneously.
+- **Multi-session & Index Management**: Watches and manages multiple parallel agy sessions simultaneously. Supports index-based shortcut commands for quicker interaction.
+- **Dynamic Localization (i18n)**: Fully localized interfaces in both English and Chinese. The bot adapts to user settings dynamically.
+- **Interactive Configuration Settings**: Offers a custom `/settings` card interface in Feishu to toggle widescreen views, theme templates, and active display languages.
+- **Localized Guide Help**: Built-in `/help` command displaying a detailed user guide formatted based on current language configuration.
 - **Security Authorization**: Only messages from the configured `FEISHU_DEFAULT_CHAT_ID` are allowed to control the bot. All other senders receive an unauthorized error.
-- **macOS PTY Wrapping**: On macOS, new sessions are spawned via Python's `pty` module to allocate a pseudo-terminal, satisfying agy's TTY requirements without deadlocking stdin.
+- **macOS PTY Wrapping**: On macOS, new sessions are spawned via Python's `pty` module to allocate a pseudo-terminal with a standard window size (80x24), satisfying agy's TUI/TTY requirements without deadlocking stdin.
 
 ---
 
@@ -56,6 +59,8 @@ feishu-client.js  ──► messageHandler / actionHandler  (index.js)
 | `src/agy-injector.js` | Writes IPC message files and updates `settings.json` for model switching |
 | `src/session-registry.js` | In-memory session store; tracks all active sessions and the default session |
 | `src/db-helper.py` | Python script called by `session-watcher.js` to query SQLite conversation DBs for pending questions, permission prompts, and errors |
+| `src/settings-manager.js` | Manages project settings (language, widescreen mode, and theme template preferences) |
+| `src/i18n.js` | Localization helper; stores translation strings and outputs localized content dynamically |
 
 ---
 
@@ -112,11 +117,14 @@ Type these commands directly in your chat with the bot to manage agy:
 | Command | Action |
 |:---|:---|
 | `/new <prompt>` | Start a new `agy` session with the given initial prompt. |
-| `/list` | List all active agy sessions monitored by the bridge. The default session is marked with ⭐. |
-| `/switch <session-id>` | Switch the default active session to route messages to. |
+| `/list` | List all active agy sessions monitored by the bridge. Shows status (🟢 running, ⚪ stopped) and default session (marked with ⭐). |
+| `/switch <index/session-id>` | Switch the default active session to route messages to. Accepts an integer index or session ID. |
 | `/model` | Show the current model and list all available model aliases. |
 | `/model <model-alias>` | Switch the model (aliases: `flash`, `medium`, `claude`, `gemini`). |
-| `/stop` | Kill the default active session and stop watching its log. |
+| `/stop [index/session-id]` | Kill the target session process (defaults to the default session) and stop watching its log. Accepts index or ID. |
+| `/del <index/session-id/all>` | Kill the target session process, remove it from registry, and delete its local transcript/db files. Use `/del all` to clean all sessions. |
+| `/settings` | Open the interactive settings card to configure language (zh/en), theme template, and widescreen mode. |
+| `/help` | Show the localized user guide detailing all available commands. |
 | *Plain Text Message* | Routes the message as user input to the default active session. Blocked with a warning if the session is currently busy. |
 
 ---
