@@ -30,6 +30,15 @@ watcher.on('session:new', ({ sessionId, filePath }) => {
     }
     registry.setDefault(sessionId);
     console.log(`[Registry] Set default session to ${sessionId} (spawned via /new)`);
+  } else {
+    // If not in spawnedQueue, this session was spawned internally (e.g., a subagent).
+    // Inherit the chatId of the current default active session.
+    const defaultSess = registry.getDefault();
+    const session = registry.get(sessionId);
+    if (session && defaultSess) {
+      session.feishuChatId = defaultSess.feishuChatId;
+      console.log(`[Registry] Session ${sessionId} inherited chatId ${defaultSess.feishuChatId} from default session ${defaultSess.id}`);
+    }
   }
 });
 
