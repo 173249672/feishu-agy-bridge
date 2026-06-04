@@ -1,16 +1,29 @@
-export function buildPermissionCard(sessionId, stepIndex, reason) {
+import { t } from './i18n.js';
+import { settingsManager } from './settings-manager.js';
+
+function getCardConfig(defaultColor) {
+  const theme = settingsManager.get('theme') || 'default';
+  const wideScreen = settingsManager.get('wideScreen') !== false;
   return {
-    config: { wide_screen_mode: true },
+    wideScreen,
+    template: theme === 'default' ? defaultColor : theme
+  };
+}
+
+export function buildPermissionCard(sessionId, stepIndex, reason) {
+  const cfg = getCardConfig('yellow');
+  return {
+    config: { wide_screen_mode: cfg.wideScreen },
     header: {
-      template: 'yellow',
-      title: { tag: 'plain_text', content: '⚠️ AGY 请求操作确认' }
+      template: cfg.template,
+      title: { tag: 'plain_text', content: t('card_permission_title') }
     },
     elements: [
       {
         tag: 'div',
         text: {
           tag: 'lark_md',
-          content: `**会话 ID**: \`${sessionId}\`\n**步骤**: #${stepIndex}\n\n**请求原因**:\n${reason}`
+          content: `**${t('card_session_id')}**: \`${sessionId}\`\n**${t('card_step')}**: #${stepIndex}\n\n**${t('card_reason')}**:\n${reason}`
         }
       },
       {
@@ -18,13 +31,13 @@ export function buildPermissionCard(sessionId, stepIndex, reason) {
         actions: [
           {
             tag: 'button',
-            text: { tag: 'plain_text', content: '✅ 确认' },
+            text: { tag: 'plain_text', content: `✅ ${t('card_permission_confirm')}` },
             type: 'primary',
             value: { action: 'approve', sessionId, stepIndex }
           },
           {
             tag: 'button',
-            text: { tag: 'plain_text', content: '❌ 取消' },
+            text: { tag: 'plain_text', content: `❌ ${t('card_permission_cancel')}` },
             type: 'danger',
             value: { action: 'reject', sessionId, stepIndex }
           }
@@ -35,18 +48,19 @@ export function buildPermissionCard(sessionId, stepIndex, reason) {
 }
 
 export function buildErrorCard(sessionId, stepIndex, errorMsg) {
+  const cfg = getCardConfig('red');
   return {
-    config: { wide_screen_mode: true },
+    config: { wide_screen_mode: cfg.wideScreen },
     header: {
-      template: 'red',
-      title: { tag: 'plain_text', content: '🚨 AGY 运行出现异常' }
+      template: cfg.template,
+      title: { tag: 'plain_text', content: t('card_error_title') }
     },
     elements: [
       {
         tag: 'div',
         text: {
           tag: 'lark_md',
-          content: `**会话 ID**: \`${sessionId}\`\n**步骤**: #${stepIndex}\n\n**错误信息**:\n\`\`\`\n${errorMsg.substring(0, 1000)}\n\`\`\``
+          content: `**${t('card_session_id')}**: \`${sessionId}\`\n**${t('card_step')}**: #${stepIndex}\n\n**${t('card_error_info')}**:\n\`\`\`\n${errorMsg.substring(0, 1000)}\n\`\`\``
         }
       }
     ]
@@ -54,16 +68,14 @@ export function buildErrorCard(sessionId, stepIndex, errorMsg) {
 }
 
 export function buildCompletedCard(sessionId, stepIndex, summary, isActive = true) {
-  const title = isActive ? '💬 AGY 回复 (等待您的输入...)' : '🏁 AGY 会话已结束';
-  const template = isActive ? 'green' : 'grey';
-  const footer = isActive 
-    ? '\n\n---\n💡 **提示**: 机器人正等待输入，您可以直接在此回复继续对话。' 
-    : '\n\n---\n🏁 **提示**: 会话已结束，如需开始新任务请发送 `/new <提示词>`。';
+  const cfg = getCardConfig(isActive ? 'green' : 'grey');
+  const title = isActive ? t('card_completed_waiting') : t('card_completed_done');
+  const footer = isActive ? t('card_completed_tip_active') : t('card_completed_tip_done');
 
   return {
-    config: { wide_screen_mode: true },
+    config: { wide_screen_mode: cfg.wideScreen },
     header: {
-      template: template,
+      template: isActive ? cfg.template : 'grey',
       title: { tag: 'plain_text', content: title }
     },
     elements: [
@@ -71,7 +83,7 @@ export function buildCompletedCard(sessionId, stepIndex, summary, isActive = tru
         tag: 'div',
         text: {
           tag: 'lark_md',
-          content: `**会话 ID**: \`${sessionId}\`\n\n**完成摘要**:\n${summary.substring(0, 2000)}${footer}`
+          content: `**${t('card_session_id')}**: \`${sessionId}\`\n\n**${t('card_summary')}**:\n${summary.substring(0, 2000)}${footer}`
         }
       }
     ]
@@ -79,18 +91,19 @@ export function buildCompletedCard(sessionId, stepIndex, summary, isActive = tru
 }
 
 export function buildStatusCard(sessionId, statusText) {
+  const cfg = getCardConfig('blue');
   return {
-    config: { wide_screen_mode: true },
+    config: { wide_screen_mode: cfg.wideScreen },
     header: {
-      template: 'blue',
-      title: { tag: 'plain_text', content: 'ℹ️ AGY 状态更新' }
+      template: cfg.template,
+      title: { tag: 'plain_text', content: t('card_status_update') }
     },
     elements: [
       {
         tag: 'div',
         text: {
           tag: 'lark_md',
-          content: `**会话 ID**: \`${sessionId}\`\n**状态**: ${statusText}`
+          content: `**${t('card_session_id')}**: \`${sessionId}\`\n**${t('card_status')}**: ${statusText}`
         }
       }
     ]
@@ -98,6 +111,7 @@ export function buildStatusCard(sessionId, statusText) {
 }
 
 export function buildQuestionCard(sessionId, stepIndex, questionData) {
+  const cfg = getCardConfig('violet');
   const firstQuestion = questionData.questions[0];
   const questionText = firstQuestion.question;
   const options = firstQuestion.options;
@@ -109,7 +123,7 @@ export function buildQuestionCard(sessionId, stepIndex, questionData) {
   const buttons = options.map((opt, idx) => {
     return {
       tag: 'button',
-      text: { tag: 'plain_text', content: `选择 ${idx + 1}` },
+      text: { tag: 'plain_text', content: `${t('card_question_btn_prefix')}${idx + 1}` },
       type: 'primary',
       value: { 
         action: 'answer', 
@@ -122,22 +136,103 @@ export function buildQuestionCard(sessionId, stepIndex, questionData) {
   });
 
   return {
-    config: { wide_screen_mode: true },
+    config: { wide_screen_mode: cfg.wideScreen },
     header: {
-      template: 'violet',
-      title: { tag: 'plain_text', content: '❓ AGY 提问 (需要您的决策)' }
+      template: cfg.template,
+      title: { tag: 'plain_text', content: t('card_question_title') }
     },
     elements: [
       {
         tag: 'div',
         text: {
           tag: 'lark_md',
-          content: `**会话 ID**: \`${sessionId}\`\n**步骤**: #${stepIndex}\n\n**问题**:\n${questionText}\n\n**选项**:\n${optionsMarkdown}`
+          content: `**${t('card_session_id')}**: \`${sessionId}\`\n**${t('card_step')}**: #${stepIndex}\n\n**${t('card_question')}**:\n${questionText}\n\n**${t('card_options')}**:\n${optionsMarkdown}`
         }
       },
       {
         tag: 'action',
         actions: buttons
+      }
+    ]
+  };
+}
+
+export function buildSettingsCard() {
+  const current = settingsManager.getAll();
+  const tLang = current.language === 'zh' ? '中文 (Chinese)' : 'English';
+  const tTheme = {
+    default: 'Default (Multi-color)',
+    blue: 'Cool Blue',
+    orange: 'Warm Orange',
+    violet: 'Elegant Violet',
+    grey: 'Minimalist Grey'
+  }[current.theme];
+  const tWS = current.wideScreen ? 'On' : 'Off';
+
+  return {
+    config: { wide_screen_mode: true },
+    header: {
+      template: 'indigo',
+      title: { tag: 'plain_text', content: t('settings_title') }
+    },
+    elements: [
+      {
+        tag: 'div',
+        text: {
+          tag: 'lark_md',
+          content: `**${t('settings_lang_label')}**: \`${tLang}\`\n**${t('settings_theme_label')}**: \`${tTheme}\`\n**${t('settings_widescreen_label')}**: \`${tWS}\``
+        }
+      },
+      {
+        tag: 'action',
+        actions: [
+          {
+            tag: 'button',
+            text: { tag: 'plain_text', content: '🌐 中文' },
+            type: current.language === 'zh' ? 'primary' : 'default',
+            value: { action: 'set_lang', lang: 'zh' }
+          },
+          {
+            tag: 'button',
+            text: { tag: 'plain_text', content: '🌐 English' },
+            type: current.language === 'en' ? 'primary' : 'default',
+            value: { action: 'set_lang', lang: 'en' }
+          }
+        ]
+      },
+      {
+        tag: 'action',
+        actions: [
+          { key: 'default', name: 'Default' },
+          { key: 'blue', name: 'Blue' },
+          { key: 'orange', name: 'Orange' },
+          { key: 'violet', name: 'Violet' },
+          { key: 'grey', name: 'Grey' }
+        ].map(item => {
+          return {
+            tag: 'button',
+            text: { tag: 'plain_text', content: item.name },
+            type: current.theme === item.key ? 'primary' : 'default',
+            value: { action: 'set_theme', theme: item.key }
+          };
+        })
+      },
+      {
+        tag: 'action',
+        actions: [
+          {
+            tag: 'button',
+            text: { tag: 'plain_text', content: '🖥️ Wide Screen: ON' },
+            type: current.wideScreen ? 'primary' : 'default',
+            value: { action: 'toggle_widescreen', wideScreen: true }
+          },
+          {
+            tag: 'button',
+            text: { tag: 'plain_text', content: '🖥️ Wide Screen: OFF' },
+            type: !current.wideScreen ? 'primary' : 'default',
+            value: { action: 'toggle_widescreen', wideScreen: false }
+          }
+        ]
       }
     ]
   };

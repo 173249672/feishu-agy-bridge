@@ -1,7 +1,14 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import * as CardBuilder from '../src/card-builder.js';
+import { settingsManager } from '../src/settings-manager.js';
 
 describe('CardBuilder', () => {
+  beforeEach(() => {
+    settingsManager.set('language', 'zh');
+    settingsManager.set('theme', 'default');
+    settingsManager.set('wideScreen', true);
+  });
+
   it('should build correct permission card', () => {
     const card = CardBuilder.buildPermissionCard('sess1', 5, 'Require git write');
     expect(card.header.template).toBe('yellow');
@@ -26,5 +33,20 @@ describe('CardBuilder', () => {
     expect(card.header.template).toBe('grey');
     expect(card.header.title.content).toContain('会话已结束');
     expect(card.elements[0].text.content).toContain('会话已结束');
+  });
+
+  it('should support theme and widescreen settings override', () => {
+    settingsManager.set('theme', 'violet');
+    settingsManager.set('wideScreen', false);
+
+    const card = CardBuilder.buildPermissionCard('sess1', 5, 'Require git write');
+    expect(card.header.template).toBe('violet');
+    expect(card.config.wide_screen_mode).toBe(false);
+  });
+
+  it('should build correct settings card', () => {
+    const card = CardBuilder.buildSettingsCard();
+    expect(card.header.template).toBe('indigo');
+    expect(card.elements[0].text.content).toContain('语言');
   });
 });
