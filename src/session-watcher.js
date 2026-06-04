@@ -62,7 +62,9 @@ export class SessionWatcher extends EventEmitter {
         const transcriptPath = path.join(this.brainDir, sessionId, '.system_generated', 'logs', 'transcript.jsonl');
         this.registerNewSession(sessionId, transcriptPath);
         const dbPath = path.join(this.conversationsDir, `${sessionId}.db`);
-        this.checkDatabaseForQuestion(dbPath, sessionId);
+        if (this.isReady) {
+          this.checkDatabaseForQuestion(dbPath, sessionId);
+        }
       }
     });
 
