@@ -1,49 +1,34 @@
 import { config } from './config.js';
 import { SessionRegistry } from './session-registry.js';
-import { AGYInjector } from './agy-injector.js';
 import { SessionWatcher } from './session-watcher.js';
 import { EventClassifier } from './event-classifier.js';
 import { FeishuClient } from './feishu-client.js';
 import * as CardBuilder from './card-builder.js';
-import { spawn } from 'child_process';
-import fs from 'fs';
-import path from 'path';
 import { t } from './i18n.js';
-import { settingsManager } from './settings-manager.js';
 
 const registry = new SessionRegistry();
-export const injector = new AGYInjector(config.agy.brainDir, config.agy.settingsPath);
 export const watcher = new SessionWatcher(config.agy.brainDir);
 const classifier = new EventClassifier();
 export const feishu = new FeishuClient(config.feishu.appId, config.feishu.appSecret, config.feishu.defaultChatId);
 
 export const activeProcesses = new Map();
-export const spawnedQueue = [];
-const newline = process.platform === 'darwin' ? '\r' : '\n';
 
 watcher.on('session:new', ({ sessionId, filePath }) => {
   console.log(`[Watcher] New session detected: ${sessionId}`);
   registry.register(sessionId, filePath);
 
-  const pending = spawnedQueue.shift();
-  if (pending) {
-    activeProcesses.set(sessionId, pending.cp);
-    const session = registry.get(sessionId);
-    if (session) {
-      session.feishuChatId = pending.chatId;
-    }
-    registry.setDefault(sessionId);
-    console.log(`[Registry] Set default session to ${sessionId} (spawned via /new)`);
-  } else {
-    // If not in spawnedQueue, this session was spawned internally (e.g., a subagent).
-    // Inherit the chatId of the current default active session.
-    const defaultSess = registry.getDefault();
-    const session = registry.get(sessionId);
-    if (session && defaultSess) {
+  // Inherit the chatId of the current default active session, or use default from config
+  const defaultSess = registry.getDefault();
+  const session = registry.get(sessionId);
+  if (session) {
+    if (defaultSess) {
       session.feishuChatId = defaultSess.feishuChatId;
       console.log(`[Registry] Session ${sessionId} inherited chatId ${defaultSess.feishuChatId} from default session ${defaultSess.id}`);
+    } else {
+      session.feishuChatId = config.feishu.defaultChatId;
     }
   }
+  registry.setDefault(sessionId);
 });
 
 watcher.on('line', async ({ sessionId, line }) => {
@@ -63,7 +48,7 @@ watcher.on('line', async ({ sessionId, line }) => {
   let card;
   if (event.eventType === 'PERMISSION_REQUIRED') {
     session.status = 'waiting_permission';
-    card = CardBuilder.buildPermissionCard(sessionId, event.stepIndex, event.summary);
+    card = CardBuilder.buildPermissionNotifyCard(sessionId, event.stepIndex, event.summary);
   } else if (event.eventType === 'ERROR') {
     session.status = 'error';
     card = CardBuilder.buildErrorCard(sessionId, event.stepIndex, event.summary);
@@ -203,352 +188,9 @@ watcher.on('error', (err) => {
 });
 
 
-function resolveSession(arg) {
-  if (!arg) return null;
-  const list = registry.list().sort((a, b) => a.startTime - b.startTime);
-  const idx = parseInt(arg, 10);
-  if (!isNaN(idx) && idx >= 1 && idx <= list.length) {
-    return list[idx - 1];
-  }
-  return registry.get(arg) || null;
-}
-
-const deleteSessionFiles = (sessionId) => {
-  const brainDir = path.join(config.agy.brainDir, sessionId);
-  try {
-    if (fs.existsSync(brainDir)) {
-      fs.rmSync(brainDir, { recursive: true, force: true });
-    }
-  } catch (e) {
-    console.error(`Failed to delete brain dir: ${brainDir}`, e);
-  }
-  const conversationsDir = watcher.conversationsDir;
-  const dbExtensions = ['.db', '.db-wal', '.db-shm'];
-  for (const ext of dbExtensions) {
-    const dbFile = path.join(conversationsDir, `${sessionId}${ext}`);
-    try {
-      if (fs.existsSync(dbFile)) {
-        fs.rmSync(dbFile, { force: true });
-      }
-    } catch (e) {
-      console.error(`Failed to delete db file: ${dbFile}`, e);
-    }
-  }
-  watcher.knownSessions.delete(sessionId);
-};
-
-// Max length for /new task prompt to prevent resource abuse
-const MAX_NEW_ARG_LENGTH = 4096;
-
-export const messageHandler = async ({ chatId, senderId, text, isP2P }) => {
-  const input = text.trim();
-  // Truncate logged input to avoid leaking sensitive data in logs
-  const logInput = input.length > 120 ? input.slice(0, 120) + '…' : input;
-  console.log(`[Feishu] Message from ${senderId} in ${chatId}: ${logInput}`);
-
-  // Security authorization check: only allow commands from the authorized defaultChatId
-  if (config.feishu.defaultChatId && chatId !== config.feishu.defaultChatId) {
-    console.warn(`[Security] Unauthorized message attempt from chatId: ${chatId}`);
-    await feishu.sendTextMessage(chatId, '❌ You are not authorized to interact with this bot.');
-    return;
-  }
-
-  if (input.startsWith('/')) {
-    const parts = input.split(' ');
-    const command = parts[0].toLowerCase();
-    const arg = parts.slice(1).join(' ');
-
-    if (command === '/new') {
-      if (!arg) {
-        await feishu.sendTextMessage(chatId, t('new_usage'));
-        return;
-      }
-
-      // Guard against excessively long prompts
-      if (arg.length > MAX_NEW_ARG_LENGTH) {
-        await feishu.sendTextMessage(chatId, `❌ Task prompt too long (max ${MAX_NEW_ARG_LENGTH} characters).`);
-        return;
-      }
-
-      await feishu.sendTextMessage(chatId, t('new_start', arg));
-      
-      // Clean environment to avoid agent-specific variables causing conflicts
-      const cleanEnv = { ...process.env, FORCE_COLOR: '1' };
-      for (const key of Object.keys(cleanEnv)) {
-        if (key === 'ANTIGRAVITY_LS_ADDRESS' || key === 'ANTIGRAVITY_CSRF_TOKEN' || key === 'ANTIGRAVITY_PROJECT_ID') {
-          continue;
-        }
-        if (key.startsWith('ANTIGRAVITY_') || key.startsWith('CHROME_') || key.startsWith('AGY_BROWSER_')) {
-          delete cleanEnv[key];
-        }
-      }
-
-      // On macOS, we wrap the spawn using python3's pty module to allocate a pseudo-terminal (PTY).
-      // This prevents agy from deadlocking on reading stdin, and satisfies Bubble Tea's TTY requirements.
-      // We explicitly configure the PTY window size to 80 columns and 24 rows to ensure the Bubble Tea TUI
-      // renders and focuses its text inputs correctly.
-      const isMac = process.platform === 'darwin';
-      const cmd = isMac ? 'python3' : 'agy';
-      const spawnArgs = isMac 
-        ? [
-            '-c',
-            'import pty, os, sys, fcntl, termios, struct;\n' +
-            'pid, fd = pty.fork()\n' +
-            'if pid == 0:\n' +
-            '    try: fcntl.ioctl(1, termios.TIOCSWINSZ, struct.pack("HHHH", 24, 80, 0, 0))\n' +
-            '    except: pass\n' +
-            '    os.execlp(sys.argv[1], *sys.argv[1:])\n' +
-            'else:\n' +
-            '    try: pty._copy(fd)\n' +
-            '    except: pass',
-            'agy', '-i', arg
-          ]
-        : ['-i', arg];
-
-      const cp = spawn(cmd, spawnArgs, {
-        env: cleanEnv
-      });
-
-      cp.stdoutBuffer = '';
-      const startTime = Date.now();
-      let stderrBuffer = '';
-      spawnedQueue.push({ cp, chatId, timestamp: startTime });
-
-      cp.errorNotified = false;
-      const notifyError = async (rawMessage) => {
-        if (cp.errorNotified) return;
-        cp.errorNotified = true;
-        const clean = rawMessage.replace(/\x1b\[[^m]*m|[\x00-\x08\x0e-\x1f\x7f]/g, '').trim();
-        const quotaMatch = clean.match(/Individual quota reached[^.\n]*/);
-        const resourceMatch = clean.match(/RESOURCE_EXHAUSTED[^\n]*/i);
-        const shortError = quotaMatch?.[0] || resourceMatch?.[0] || clean.split('\n').find(l => l.trim()) || clean;
-
-        await feishu.sendTextMessage(chatId, t('new_fail', shortError.slice(0, 300)));
-      };
-
-      cp.stdout.on('data', (data) => {
-        const text = data.toString();
-        console.log(`[AGY Out]: ${text}`);
-        cp.stdoutBuffer += text;
-      });
-
-      cp.stderr.on('data', (data) => {
-        const text = data.toString();
-        console.error(`[AGY Err]: ${text}`);
-        stderrBuffer += text;
-      });
-
-      cp.on('close', async (code) => {
-        const elapsed = Date.now() - startTime;
-        console.log(`[AGY Closed] Exit code: ${code}, elapsed: ${elapsed}ms`);
-
-        // Remove from activeProcesses
-        for (const [sid, processCp] of activeProcesses.entries()) {
-          if (processCp === cp) {
-            activeProcesses.delete(sid);
-            break;
-          }
-        }
-
-        // Fallback: if closed with error and we haven't already notified
-        if (code !== 0 && !cp.errorNotified) {
-          await notifyError(cp.stdoutBuffer + stderrBuffer || `AGY exited with code ${code}`);
-        }
-      });
-      return;
-    }
-
-    if (command === '/list') {
-      const list = registry.list().sort((a, b) => a.startTime - b.startTime);
-      if (list.length === 0) {
-        await feishu.sendTextMessage(chatId, t('list_empty'));
-        return;
-      }
-      const defaultSess = registry.getDefault();
-      const lines = list.map((s, i) => {
-        const isDefault = defaultSess && defaultSess.id === s.id ? '⭐ ' : '  ';
-        const isActive = activeProcesses.has(s.id);
-        const statusIndicator = isActive ? '🟢' : '⚪';
-        return `[${i + 1}] ${isDefault}${statusIndicator} \`${s.id}\` (started: ${s.startTime.toLocaleTimeString()})`;
-      });
-      await feishu.sendTextMessage(chatId, `${t('list_header')}\n${lines.join('\n')}`);
-      return;
-    }
-
-    if (command === '/switch') {
-      if (!arg) {
-        await feishu.sendTextMessage(chatId, t('switch_usage'));
-        return;
-      }
-      const session = resolveSession(arg);
-      if (session) {
-        registry.setDefault(session.id);
-        await feishu.sendTextMessage(chatId, t('switch_success', session.id));
-      } else {
-        await feishu.sendTextMessage(chatId, t('switch_fail', arg));
-      }
-      return;
-    }
-
-    if (command === '/model') {
-      if (!arg) {
-        const info = injector.getModelsInfo();
-        const availableList = Object.entries(info.aliases)
-          .map(([alias, name]) => `• ${alias}: ${name}`)
-          .join('\n');
-        await feishu.sendTextMessage(
-          chatId,
-          `${t('model_list_header', info.currentModel)}${availableList}${t('model_usage')}`
-        );
-        return;
-      }
-      try {
-        const chosenModel = injector.switchModel(arg);
-        await feishu.sendTextMessage(chatId, t('model_success', chosenModel));
-      } catch (err) {
-        await feishu.sendTextMessage(chatId, t('model_fail', err.message));
-      }
-      return;
-    }
-
-    if (command === '/stop') {
-      let session;
-      if (arg) {
-        session = resolveSession(arg);
-        if (!session) {
-          await feishu.sendTextMessage(chatId, t('switch_fail', arg));
-          return;
-        }
-      } else {
-        session = registry.getDefault();
-        if (!session) {
-          await feishu.sendTextMessage(chatId, t('stop_no_default'));
-          return;
-        }
-      }
-      const cp = activeProcesses.get(session.id);
-      if (cp) {
-        try { cp.kill('SIGTERM'); } catch (e) {}
-        activeProcesses.delete(session.id);
-        await feishu.sendTextMessage(chatId, t('stop_success', session.id));
-      } else {
-        await feishu.sendTextMessage(chatId, t('stop_already', session.id));
-      }
-      return;
-    }
-
-    if (command === '/del') {
-      if (!arg) {
-        await feishu.sendTextMessage(chatId, t('del_usage'));
-        return;
-      }
-      if (arg.toLowerCase() === 'all') {
-        const list = registry.list();
-        let deletedCount = 0;
-        for (const s of list) {
-          const cp = activeProcesses.get(s.id);
-          if (cp) {
-            try { cp.kill('SIGTERM'); } catch (e) {}
-            activeProcesses.delete(s.id);
-          }
-          deleteSessionFiles(s.id);
-          registry.remove(s.id);
-          deletedCount++;
-        }
-        await feishu.sendTextMessage(chatId, t('del_all', deletedCount));
-        return;
-      }
-      const session = resolveSession(arg);
-      if (!session) {
-        await feishu.sendTextMessage(chatId, t('switch_fail', arg));
-        return;
-      }
-      const cp = activeProcesses.get(session.id);
-      if (cp) {
-        try { cp.kill('SIGTERM'); } catch (e) {}
-        activeProcesses.delete(session.id);
-      }
-      deleteSessionFiles(session.id);
-      registry.remove(session.id);
-      await feishu.sendTextMessage(chatId, t('del_success', session.id));
-      return;
-    }
-
-    if (command === '/settings') {
-      const card = CardBuilder.buildSettingsCard();
-      await feishu.sendInteractiveCard(chatId, card);
-      return;
-    }
-
-    if (command === '/help') {
-      await feishu.sendTextMessage(chatId, t('help_content'));
-      return;
-    }
-
-    await feishu.sendTextMessage(chatId, t('unknown_command', command));
-    return;
-  }
-
-  const defaultSess = registry.getDefault();
-  if (!defaultSess) {
-    await feishu.sendTextMessage(chatId, t('no_active_session'));
-    return;
-  }
-
-  defaultSess.feishuChatId = chatId;
-    
-  const cp = activeProcesses.get(defaultSess.id);
-  if (!cp) {
-    await feishu.sendTextMessage(chatId, t('session_not_active', defaultSess.id));
-    return;
-  }
-
-  if (defaultSess.status === 'busy') {
-    await feishu.sendTextMessage(chatId, t('bot_busy'));
-    return;
-  }
-
-  injector.injectMessage(defaultSess.id, input);
-
-  if (cp.stdin.writable) {
-    cp.stdin.write(`${input}${newline}`);
-    const logFwd = input.length > 120 ? input.slice(0, 120) + '…' : input;
-    console.log(`[Feishu] Forwarded input to session ${defaultSess.id}: ${logFwd}`);
-    defaultSess.status = 'busy';
-  } else {
-    console.error(`[Feishu] Process stdin for session ${defaultSess.id} is not writable!`);
-  }
-};
-
-// Settings-only action handler.
-// In local-cli-notify mode, no interactive permission/question cards are sent,
-// so only settings actions (set_lang, set_theme, toggle_widescreen) can arrive here.
-export const actionHandler = async (params) => {
-  const { actionType } = params;
-  console.log(`[Feishu Action] ${actionType}`);
-
-  if (actionType === 'set_lang') {
-    settingsManager.set('language', params.lang);
-  } else if (actionType === 'set_theme') {
-    settingsManager.set('theme', params.theme);
-  } else if (actionType === 'toggle_widescreen') {
-    settingsManager.set('wideScreen', params.wideScreen);
-  } else {
-    return { toast: { type: 'error', content: 'Unsupported action in notify-only mode.' } };
-  }
-
-  const updatedCard = CardBuilder.buildSettingsCard();
-  return {
-    toast: { type: 'success', content: t('settings_save_toast') },
-    card: { type: 'raw', data: updatedCard }
-  };
-};
-
-
 async function main() {
   console.log('Starting Feishu-AGY Bridge...');
   watcher.start();
-  await feishu.start(messageHandler, actionHandler);
   console.log('Feishu-AGY Bridge is running.');
 }
 

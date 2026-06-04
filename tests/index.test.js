@@ -1,99 +1,18 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-const { spawnMock } = vi.hoisted(() => ({
-  spawnMock: vi.fn()
-}));
-
-vi.mock('child_process', () => ({
-  spawn: (...args) => spawnMock(...args)
-}));
-
-import { messageHandler, injector, feishu, watcher, activeProcesses, spawnedQueue, actionHandler } from '../src/index.js';
-import { registry } from '../src/session-registry.js';
+import { feishu, watcher, activeProcesses } from '../src/index.js';
 import { config } from '../src/config.js';
 import * as CardBuilder from '../src/card-builder.js';
 import { settingsManager } from '../src/settings-manager.js';
-import fs from 'fs';
-
-describe('index.js messageHandler', () => {
-  beforeEach(() => {
-    vi.restoreAllMocks();
-    spawnMock.mockReset();
-    config.feishu.defaultChatId = 'test-chat-id';
-    activeProcesses.clear();
-    spawnedQueue.length = 0;
-    settingsManager.set('language', 'en');
-    settingsManager.set('theme', 'default');
-    settingsManager.set('wideScreen', true);
-  });
-
-  it('should format and return model list when /model is called without argument', async () => {
-    const getModelsInfoSpy = vi.spyOn(injector, 'getModelsInfo').mockReturnValue({
-      currentModel: 'Test Model A',
-      aliases: {
-        'alias1': 'Test Model A',
-        'alias2': 'Test Model B'
-      }
-    });
-
-    const sendTextMessageSpy = vi.spyOn(feishu, 'sendTextMessage').mockResolvedValue(undefined);
-
-    await messageHandler({
-      chatId: 'test-chat-id',
-      senderId: 'user-123',
-      text: '/model',
-      isP2P: false
-    });
-
-    expect(getModelsInfoSpy).toHaveBeenCalled();
-    expect(sendTextMessageSpy).toHaveBeenCalledWith(
-      'test-chat-id',
-      `🤖 Current Model: \`Test Model A\`\n\n📋 Available Models:\n• alias1: Test Model A\n• alias2: Test Model B\n\nUsage: \`/model <model-name>\``
-    );
-  });
-
-  it('should switch model when /model is called with a model name', async () => {
-    const switchModelSpy = vi.spyOn(injector, 'switchModel').mockReturnValue('Test Model B');
-    const sendTextMessageSpy = vi.spyOn(feishu, 'sendTextMessage').mockResolvedValue(undefined);
-
-    await messageHandler({
-      chatId: 'test-chat-id',
-      senderId: 'user-123',
-      text: '/model alias2',
-      isP2P: false
-    });
-
-    expect(switchModelSpy).toHaveBeenCalledWith('alias2');
-    expect(sendTextMessageSpy).toHaveBeenCalledWith(
-      'test-chat-id',
-      '✅ Model switched to `Test Model B`'
-    );
-  });
-
-  it('should return failure message if switching model throws an error', async () => {
-    const switchModelSpy = vi.spyOn(injector, 'switchModel').mockImplementation(() => {
-      throw new Error('Some error');
-    });
-    const sendTextMessageSpy = vi.spyOn(feishu, 'sendTextMessage').mockResolvedValue(undefined);
-
-    await messageHandler({
-      chatId: 'test-chat-id',
-      senderId: 'user-123',
-      text: '/model invalid-model',
-      isP2P: false
-    });
-
-    expect(switchModelSpy).toHaveBeenCalledWith('invalid-model');
-    expect(sendTextMessageSpy).toHaveBeenCalledWith(
-      'test-chat-id',
-      '❌ Failed to switch model: Some error'
-    );
-  });
-});
 
 describe('index.js session:permission handler', () => {
   beforeEach(() => {
     vi.restoreAllMocks();
+    config.feishu.defaultChatId = 'test-chat-id';
+    activeProcesses.clear();
+    settingsManager.set('language', 'en');
+    settingsManager.set('theme', 'default');
+    settingsManager.set('wideScreen', true);
   });
 
   it('should send a permission card when session:permission event is emitted', async () => {
@@ -113,9 +32,7 @@ describe('index.js session:permission handler', () => {
     const listeners = watcher.rawListeners('session:permission');
     expect(listeners.length).toBeGreaterThan(0);
 
-    // Register session in the module-level registry via messageHandler side-effect
-    // Instead, we manually register with the registry by inspecting what's needed
-    // Patch registry.get to return the fakeRegistry
+    // Register session in the module-level registry
     const registryModule = await import('../src/session-registry.js');
     const registrySpy = vi.spyOn(registryModule.SessionRegistry.prototype, 'get').mockReturnValue(fakeRegistry);
 
@@ -223,396 +140,35 @@ settings.json)
   });
 });
 
-describe('index.js session:agy_error handler and /new close fallback', () => {
+describe('index.js session:agy_error handler', () => {
   beforeEach(() => {
     vi.restoreAllMocks();
-    spawnMock.mockReset();
   });
 
   it('should notify and kill process on session:agy_error', async () => {
     const mockKill = vi.fn();
     const mockCp = {
-      stdout: { on: vi.fn() },
-      stderr: { on: vi.fn() },
-      on: vi.fn(),
       kill: mockKill,
       errorNotified: false
     };
 
-    spawnMock.mockReturnValue(mockCp);
+    activeProcesses.set('session-123', mockCp);
 
     const sendTextMessageSpy = vi.spyOn(feishu, 'sendTextMessage').mockResolvedValue(undefined);
-
-    // 1. Call /new to queue the process
-    await messageHandler({
-      chatId: 'test-chat-id',
-      senderId: 'user-123',
-      text: '/new test session',
-      isP2P: false
-    });
-
-    // 2. Simulate session:new to move mockCp to activeProcesses
-    const newSessionListeners = watcher.rawListeners('session:new');
-    newSessionListeners[0]({ sessionId: 'session-123', filePath: '/fake/path' });
 
     // Mock session lookup
     const fakeSession = { feishuChatId: 'test-chat-id', lastErrorIdx: undefined };
     const registryModule = await import('../src/session-registry.js');
     const registrySpy = vi.spyOn(registryModule.SessionRegistry.prototype, 'get').mockReturnValue(fakeSession);
 
-    // 3. Trigger session:agy_error listener
+    // Trigger session:agy_error listener
     const errorListeners = watcher.rawListeners('session:agy_error');
     await errorListeners[0]({ sessionId: 'session-123', idx: 1, message: 'Quota reached' });
 
-    // 4. Verification
     expect(sendTextMessageSpy).toHaveBeenCalledWith('test-chat-id', expect.stringContaining('Quota reached'));
     expect(mockKill).toHaveBeenCalledWith('SIGTERM');
     expect(mockCp.errorNotified).toBe(true);
 
     registrySpy.mockRestore();
-  });
-
-  it('should send fallback error message on close if not already notified', async () => {
-    let closeHandler;
-    const mockCp = {
-      stdout: { on: vi.fn() },
-      stderr: { on: vi.fn() },
-      on: vi.fn((event, handler) => {
-        if (event === 'close') {
-          closeHandler = handler;
-        }
-      }),
-      errorNotified: false
-    };
-
-    spawnMock.mockReturnValue(mockCp);
-
-    const sendTextMessageSpy = vi.spyOn(feishu, 'sendTextMessage').mockResolvedValue(undefined);
-
-    // Call /new to trigger spawn and register the close handler
-    await messageHandler({
-      chatId: 'test-chat-id',
-      senderId: 'user-123',
-      text: '/new test session',
-      isP2P: false
-    });
-
-    expect(closeHandler).toBeDefined();
-
-    // Trigger the close handler with exit code 1
-    await closeHandler(1);
-
-    expect(sendTextMessageSpy).toHaveBeenCalledWith(
-      'test-chat-id',
-      expect.stringContaining('AGY exited with code 1')
-    );
-    expect(mockCp.errorNotified).toBe(true);
-  });
-});
-
-describe('Session management index commands', () => {
-  let mockList;
-  let mockGet;
-  let mockRemove;
-  let mockSetDefault;
-  let mockGetDefault;
-  let existsSyncSpy;
-  let rmSyncSpy;
-
-  beforeEach(async () => {
-    vi.restoreAllMocks();
-    spawnMock.mockReset();
-    config.feishu.defaultChatId = 'test-chat-id';
-    activeProcesses.clear();
-    spawnedQueue.length = 0;
-    settingsManager.set('language', 'en');
-    settingsManager.set('theme', 'default');
-    settingsManager.set('wideScreen', true);
-
-    const registryModule = await import('../src/session-registry.js');
-    mockList = vi.spyOn(registryModule.SessionRegistry.prototype, 'list');
-    mockGet = vi.spyOn(registryModule.SessionRegistry.prototype, 'get');
-    mockRemove = vi.spyOn(registryModule.SessionRegistry.prototype, 'remove');
-    mockSetDefault = vi.spyOn(registryModule.SessionRegistry.prototype, 'setDefault');
-    mockGetDefault = vi.spyOn(registryModule.SessionRegistry.prototype, 'getDefault');
-
-    existsSyncSpy = vi.spyOn(fs, 'existsSync').mockReturnValue(true);
-    rmSyncSpy = vi.spyOn(fs, 'rmSync').mockReturnValue(undefined);
-  });
-
-  it('should format /list with sorted 1-based indices, running status, and default star', async () => {
-    const startTime1 = new Date('2026-06-03T12:00:00Z');
-    const startTime2 = new Date('2026-06-03T12:05:00Z');
-
-    mockList.mockReturnValue([
-      { id: 'session-2', startTime: startTime2 },
-      { id: 'session-1', startTime: startTime1 }
-    ]);
-    mockGetDefault.mockReturnValue({ id: 'session-1' });
-
-    const sendTextMessageSpy = vi.spyOn(feishu, 'sendTextMessage').mockResolvedValue(undefined);
-
-    await messageHandler({
-      chatId: 'test-chat-id',
-      senderId: 'user-123',
-      text: '/list',
-      isP2P: false
-    });
-
-    expect(sendTextMessageSpy).toHaveBeenCalled();
-    const message = sendTextMessageSpy.mock.calls[0][1];
-    expect(message).toContain('[1] ⭐ ⚪ `session-1`');
-    expect(message).toContain('[2]   ⚪ `session-2`');
-  });
-
-  it('should switch default session by index or UUID', async () => {
-    const startTime1 = new Date('2026-06-03T12:00:00Z');
-    const startTime2 = new Date('2026-06-03T12:05:00Z');
-
-    mockList.mockReturnValue([
-      { id: 'session-2', startTime: startTime2 },
-      { id: 'session-1', startTime: startTime1 }
-    ]);
-    mockGet.mockImplementation((id) => {
-      if (id === 'session-1') return { id: 'session-1', startTime: startTime1 };
-      if (id === 'session-2') return { id: 'session-2', startTime: startTime2 };
-      return null;
-    });
-    mockSetDefault.mockReturnValue(true);
-
-    const sendTextMessageSpy = vi.spyOn(feishu, 'sendTextMessage').mockResolvedValue(undefined);
-
-    // Switch by index 1 (session-1)
-    await messageHandler({
-      chatId: 'test-chat-id',
-      senderId: 'user-123',
-      text: '/switch 1',
-      isP2P: false
-    });
-    expect(mockSetDefault).toHaveBeenCalledWith('session-1');
-
-    // Switch by index 2 (session-2)
-    await messageHandler({
-      chatId: 'test-chat-id',
-      senderId: 'user-123',
-      text: '/switch 2',
-      isP2P: false
-    });
-    expect(mockSetDefault).toHaveBeenCalledWith('session-2');
-
-    // Switch by UUID
-    await messageHandler({
-      chatId: 'test-chat-id',
-      senderId: 'user-123',
-      text: '/switch session-2',
-      isP2P: false
-    });
-    expect(mockSetDefault).toHaveBeenCalledWith('session-2');
-  });
-
-  it('should stop session by index (SIGTERM kill, keep in registry)', async () => {
-    const mockKill = vi.fn();
-    const mockCp = {
-      stdout: { on: vi.fn() },
-      stderr: { on: vi.fn() },
-      on: vi.fn(),
-      kill: mockKill,
-      errorNotified: false
-    };
-    spawnMock.mockReturnValue(mockCp);
-
-    const sendTextMessageSpy = vi.spyOn(feishu, 'sendTextMessage').mockResolvedValue(undefined);
-
-    // 1. Call /new to trigger spawn and queue process
-    await messageHandler({
-      chatId: 'test-chat-id',
-      senderId: 'user-123',
-      text: '/new prompt X',
-      isP2P: false
-    });
-
-    // 2. Trigger session:new to move to activeProcesses and registry
-    const newSessionListeners = watcher.rawListeners('session:new');
-    newSessionListeners[0]({ sessionId: 'session-to-stop', filePath: '/fake/path' });
-
-    // Mock registry methods
-    const startTime = new Date();
-    mockList.mockReturnValue([
-      { id: 'session-to-stop', startTime }
-    ]);
-    mockGetDefault.mockReturnValue({ id: 'session-to-stop', startTime });
-    mockGet.mockReturnValue({ id: 'session-to-stop', startTime });
-
-    // Call /stop 1
-    await messageHandler({
-      chatId: 'test-chat-id',
-      senderId: 'user-123',
-      text: '/stop 1',
-      isP2P: false
-    });
-
-    expect(mockKill).toHaveBeenCalledWith('SIGTERM');
-    // Ensure it was NOT removed from registry
-    expect(mockRemove).not.toHaveBeenCalled();
-    expect(sendTextMessageSpy).toHaveBeenCalledWith('test-chat-id', expect.stringContaining('Stopped process for session'));
-  });
-
-  it('should delete session by index (SIGTERM kill, delete agy files, remove from registry)', async () => {
-    const mockKill = vi.fn();
-    const mockCp = {
-      stdout: { on: vi.fn() },
-      stderr: { on: vi.fn() },
-      on: vi.fn(),
-      kill: mockKill,
-      errorNotified: false
-    };
-    spawnMock.mockReturnValue(mockCp);
-
-    const sendTextMessageSpy = vi.spyOn(feishu, 'sendTextMessage').mockResolvedValue(undefined);
-
-    // 1. Call /new to trigger spawn and queue process
-    await messageHandler({
-      chatId: 'test-chat-id',
-      senderId: 'user-123',
-      text: '/new prompt Y',
-      isP2P: false
-    });
-
-    // 2. Trigger session:new to move to activeProcesses and registry
-    const newSessionListeners = watcher.rawListeners('session:new');
-    newSessionListeners[0]({ sessionId: 'session-to-del', filePath: '/fake/path' });
-
-    // Mock registry methods
-    const startTime = new Date();
-    mockList.mockReturnValue([
-      { id: 'session-to-del', startTime }
-    ]);
-    mockGetDefault.mockReturnValue({ id: 'session-to-del', startTime });
-    mockGet.mockReturnValue({ id: 'session-to-del', startTime });
-
-    // Spy on watcher.knownSessions
-    const knownSessionsDeleteSpy = vi.spyOn(watcher.knownSessions, 'delete');
-
-    // Call /del 1
-    await messageHandler({
-      chatId: 'test-chat-id',
-      senderId: 'user-123',
-      text: '/del 1',
-      isP2P: false
-    });
-
-    expect(mockKill).toHaveBeenCalledWith('SIGTERM');
-    expect(existsSyncSpy).toHaveBeenCalled();
-    expect(rmSyncSpy).toHaveBeenCalled();
-    expect(knownSessionsDeleteSpy).toHaveBeenCalledWith('session-to-del');
-    expect(mockRemove).toHaveBeenCalledWith('session-to-del');
-    expect(sendTextMessageSpy).toHaveBeenCalledWith('test-chat-id', expect.stringContaining('Deleted session `session-to-del`'));
-  });
-
-  it('should delete all sessions via /del all', async () => {
-    const mockKill = vi.fn();
-    const mockCp = {
-      stdout: { on: vi.fn() },
-      stderr: { on: vi.fn() },
-      on: vi.fn(),
-      kill: mockKill,
-      errorNotified: false
-    };
-    spawnMock.mockReturnValue(mockCp);
-
-    const sendTextMessageSpy = vi.spyOn(feishu, 'sendTextMessage').mockResolvedValue(undefined);
-
-    // Register a session
-    await messageHandler({
-      chatId: 'test-chat-id',
-      senderId: 'user-123',
-      text: '/new prompt Z',
-      isP2P: false
-    });
-    const newSessionListeners = watcher.rawListeners('session:new');
-    newSessionListeners[0]({ sessionId: 'session-z', filePath: '/fake/path' });
-
-    mockList.mockReturnValue([
-      { id: 'session-z', startTime: new Date() }
-    ]);
-
-    // Call /del all
-    await messageHandler({
-      chatId: 'test-chat-id',
-      senderId: 'user-123',
-      text: '/del all',
-      isP2P: false
-    });
-
-    expect(mockKill).toHaveBeenCalledWith('SIGTERM');
-    expect(mockRemove).toHaveBeenCalledWith('session-z');
-    expect(sendTextMessageSpy).toHaveBeenCalledWith('test-chat-id', expect.stringContaining('Deleted all 1 sessions'));
-  });
-
-  it('should display settings card on /settings', async () => {
-    const sendInteractiveCardSpy = vi.spyOn(feishu, 'sendInteractiveCard').mockResolvedValue('msg-settings');
-
-    await messageHandler({
-      chatId: 'test-chat-id',
-      senderId: 'user-123',
-      text: '/settings',
-      isP2P: false
-    });
-
-    expect(sendInteractiveCardSpy).toHaveBeenCalled();
-    const card = sendInteractiveCardSpy.mock.calls[0][1];
-    expect(card.header.title.content).toContain('Settings');
-  });
-
-  it('should display help text on /help command and respect language settings', async () => {
-    const sendTextMessageSpy = vi.spyOn(feishu, 'sendTextMessage').mockResolvedValue(undefined);
-
-    // Test with English language setting
-    settingsManager.set('language', 'en');
-    await messageHandler({
-      chatId: 'test-chat-id',
-      senderId: 'user-123',
-      text: '/help',
-      isP2P: false
-    });
-    expect(sendTextMessageSpy).toHaveBeenCalledWith('test-chat-id', expect.stringContaining('Help Center - Command Guide'));
-
-    // Test with Chinese language setting
-    settingsManager.set('language', 'zh');
-    await messageHandler({
-      chatId: 'test-chat-id',
-      senderId: 'user-123',
-      text: '/help',
-      isP2P: false
-    });
-    expect(sendTextMessageSpy).toHaveBeenLastCalledWith('test-chat-id', expect.stringContaining('帮助中心 - 指令使用指南'));
-  });
-
-  it('should handle settings actions in actionHandler and return updated card synchronously', async () => {
-    const res = await actionHandler({
-      actionType: 'set_lang',
-      lang: 'en',
-      messageId: 'msg-123',
-      operatorId: 'ou_test-operator'
-    });
-
-    expect(settingsManager.get('language')).toBe('en');
-    expect(res.toast.content).toBe('Settings updated');
-    expect(res.card.type).toBe('raw');
-    expect(res.card.data.header.title.content).toContain('Settings');
-  });
-
-  it('should reject non-settings actions in actionHandler', async () => {
-    const res = await actionHandler({
-      actionType: 'approve_option',
-      sessionId: 'test-session-123',
-      stepIndex: 5,
-      optionIndex: 1,
-      text: 'Yes, and always allow non-workspace access',
-      operatorId: 'ou_test-operator'
-    });
-
-    expect(res.toast.type).toBe('error');
-    expect(res.toast.content).toBe('Unsupported action in notify-only mode.');
   });
 });
