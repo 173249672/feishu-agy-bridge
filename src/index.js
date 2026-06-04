@@ -333,26 +333,31 @@ const actionHandler = async (params) => {
       cp.stdin.write(`\r`);
     }
 
+    const updatedCard = {
+      config: { wide_screen_mode: true },
+      header: {
+        template: 'green',
+        title: { tag: 'plain_text', content: '✅ 问题已回答' }
+      },
+      elements: [
+        {
+          tag: 'div',
+          text: {
+            tag: 'lark_md',
+            content: `**会话 ID**: \`${sessionId}\`\n**步骤**: #${stepIndex}\n\n**您的选择**: \n${optionIndex + 1}️⃣ ${text}`
+          }
+        }
+      ]
+    };
+
+    feishu.updateCard(messageId, updatedCard).catch(err => {
+      console.error(`[Feishu Action] Failed to update card asynchronously: ${err.message}`);
+    });
+
     return {
       toast: {
         type: 'success',
         content: `Selected Option ${optionIndex + 1}`
-      },
-      card: {
-        config: { wide_screen_mode: true },
-        header: {
-          template: 'green',
-          title: { tag: 'plain_text', content: `✅ 问题已回答` }
-        },
-        elements: [
-          {
-            tag: 'div',
-            text: {
-              tag: 'lark_md',
-              content: `**会话 ID**: \`${sessionId}\`\n**步骤**: #${stepIndex}\n\n**您的选择**: \n${optionIndex + 1}️⃣ ${text}`
-            }
-          }
-        ]
       }
     };
   }
@@ -365,26 +370,31 @@ const actionHandler = async (params) => {
     cp.stdin.write(`${responseText}${newline}`);
   }
 
+  const updatedCard = {
+    config: { wide_screen_mode: true },
+    header: {
+      template: actionType === 'approve' ? 'green' : 'grey',
+      title: { tag: 'plain_text', content: `✅ AGY 权限已${actionType === 'approve' ? '确认' : '拒绝'}` }
+    },
+    elements: [
+      {
+        tag: 'div',
+        text: {
+          tag: 'lark_md',
+          content: `**会话 ID**: \`${sessionId}\`\n**步骤**: #${stepIndex}\n\n**结果**: 已由用户进行${actionType === 'approve' ? '确认' : '拒绝'}。`
+        }
+      }
+    ]
+  };
+
+  feishu.updateCard(messageId, updatedCard).catch(err => {
+    console.error(`[Feishu Action] Failed to update card asynchronously: ${err.message}`);
+  });
+
   return {
     toast: {
       type: 'success',
       content: `Submitted: ${actionType.toUpperCase()}`
-    },
-    card: {
-      config: { wide_screen_mode: true },
-      header: {
-        template: actionType === 'approve' ? 'green' : 'grey',
-        title: { tag: 'plain_text', content: `✅ AGY 权限已${actionType === 'approve' ? '确认' : '拒绝'}` }
-      },
-      elements: [
-        {
-          tag: 'div',
-          text: {
-            tag: 'lark_md',
-            content: `**会话 ID**: \`${sessionId}\`\n**步骤**: #${stepIndex}\n\n**结果**: 已由用户进行${actionType === 'approve' ? '确认' : '拒绝'}。`
-          }
-        }
-      ]
     }
   };
 };
