@@ -44,9 +44,15 @@ describe('CardBuilder', () => {
     expect(card.config.wide_screen_mode).toBe(false);
   });
 
-  it('should build correct settings card', () => {
-    const card = CardBuilder.buildSettingsCard();
+  it('should build correct settings card and respect widescreen setting', () => {
+    settingsManager.set('wideScreen', true);
+    let card = CardBuilder.buildSettingsCard();
     expect(card.header.template).toBe('indigo');
     expect(card.elements[0].text.content).toContain('语言');
+    expect(card.config.wide_screen_mode).toBe(true);
+
+    settingsManager.set('wideScreen', false);
+    card = CardBuilder.buildSettingsCard();
+    expect(card.config.wide_screen_mode).toBe(false);
   });
 });

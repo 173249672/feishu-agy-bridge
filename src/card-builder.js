@@ -170,7 +170,7 @@ export function buildSettingsCard() {
   const tWS = current.wideScreen ? 'On' : 'Off';
 
   return {
-    config: { wide_screen_mode: true },
+    config: { wide_screen_mode: current.wideScreen !== false },
     header: {
       template: 'indigo',
       title: { tag: 'plain_text', content: t('settings_title') }
