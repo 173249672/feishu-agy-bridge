@@ -1,11 +1,13 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-const { spawnMock } = vi.hoisted(() => ({
-  spawnMock: vi.fn()
+const { spawnMock, execFileMock } = vi.hoisted(() => ({
+  spawnMock: vi.fn(),
+  execFileMock: vi.fn()
 }));
 
 vi.mock('child_process', () => ({
-  spawn: (...args) => spawnMock(...args)
+  spawn: (...args) => spawnMock(...args),
+  execFile: (...args) => execFileMock(...args)
 }));
 
 import { messageHandler, injector, feishu, watcher, activeProcesses, spawnedQueue, actionHandler } from '../src/index.js';
@@ -19,6 +21,7 @@ describe('index.js messageHandler', () => {
   beforeEach(() => {
     vi.restoreAllMocks();
     spawnMock.mockReset();
+    execFileMock.mockReset();
     config.feishu.defaultChatId = 'test-chat-id';
     activeProcesses.clear();
     spawnedQueue.length = 0;
@@ -228,6 +231,7 @@ describe('index.js session:agy_error handler and /new close fallback', () => {
   beforeEach(() => {
     vi.restoreAllMocks();
     spawnMock.mockReset();
+    execFileMock.mockReset();
   });
 
   it('should notify and kill process on session:agy_error', async () => {
@@ -323,6 +327,7 @@ describe('Session management index commands', () => {
   beforeEach(async () => {
     vi.restoreAllMocks();
     spawnMock.mockReset();
+    execFileMock.mockReset();
     config.feishu.defaultChatId = 'test-chat-id';
     activeProcesses.clear();
     spawnedQueue.length = 0;
@@ -698,6 +703,119 @@ describe('Session management index commands', () => {
     expect(args).toContain('--conversation');
     expect(args).toContain('session-inactive');
     expect(activeProcesses.get('session-inactive')).toBe(mockCp);
+  });
+
+  it('should parse optional flags in /new command and pass them to spawn', async () => {
+    const mockCp = {
+      stdout: { on: vi.fn() },
+      stderr: { on: vi.fn() },
+      on: vi.fn(),
+      errorNotified: false
+    };
+    spawnMock.mockReturnValue(mockCp);
+
+    const sendTextMessageSpy = vi.spyOn(feishu, 'sendTextMessage').mockResolvedValue(undefined);
+
+    await messageHandler({
+      chatId: 'test-chat-id',
+      senderId: 'user-123',
+      text: '/new --sandbox --dangerously-skip-permissions --model flash --add-dir /path/to/dir prompt text here',
+      isP2P: false
+    });
+
+    expect(sendTextMessageSpy).toHaveBeenCalledWith(
+      'test-chat-id',
+      expect.stringContaining('prompt text here')
+    );
+    expect(spawnMock).toHaveBeenCalled();
+    const spawnArgs = spawnMock.mock.calls[0][1];
+    expect(spawnArgs).toContain('--sandbox');
+    expect(spawnArgs).toContain('--dangerously-skip-permissions');
+    expect(spawnArgs).toContain('--model');
+    expect(spawnArgs).toContain('flash');
+    expect(spawnArgs).toContain('--add-dir');
+    expect(spawnArgs).toContain('/path/to/dir');
+    expect(spawnArgs).toContain('prompt text here');
+  });
+
+  it('should parse optional flags in /resume command and pass them to spawn', async () => {
+    const startTime1 = new Date('2026-06-03T12:00:00Z');
+    const mockSession = { id: 'session-inactive', startTime: startTime1 };
+    mockList.mockReturnValue([mockSession]);
+    mockGet.mockReturnValue(mockSession);
+
+    const mockCp = {
+      stdout: { on: vi.fn() },
+      stderr: { on: vi.fn() },
+      on: vi.fn(),
+      errorNotified: false
+    };
+    spawnMock.mockReturnValue(mockCp);
+
+    const sendTextMessageSpy = vi.spyOn(feishu, 'sendTextMessage').mockResolvedValue(undefined);
+
+    await messageHandler({
+      chatId: 'test-chat-id',
+      senderId: 'user-123',
+      text: '/resume 1 --sandbox --dangerously-skip-permissions',
+      isP2P: false
+    });
+
+    expect(spawnMock).toHaveBeenCalled();
+    const spawnArgs = spawnMock.mock.calls[0][1];
+    expect(spawnArgs).toContain('--sandbox');
+    expect(spawnArgs).toContain('--dangerously-skip-permissions');
+    expect(spawnArgs).toContain('--conversation');
+    expect(spawnArgs).toContain('session-inactive');
+  });
+
+  it('should run execFile and send output to Feishu for /changelog, /plugins, /update, /models', async () => {
+    const sendTextMessageSpy = vi.spyOn(feishu, 'sendTextMessage').mockResolvedValue(undefined);
+    
+    // Mock execFile to invoke callback with test output
+    execFileMock.mockImplementation((cmd, args, cb) => {
+      cb(null, `Mock output for ${args.join(' ')}`, '');
+    });
+
+    // Test /changelog
+    await messageHandler({
+      chatId: 'test-chat-id',
+      senderId: 'user-123',
+      text: '/changelog',
+      isP2P: false
+    });
+    expect(execFileMock).toHaveBeenCalledWith('agy', ['changelog'], expect.any(Function));
+    expect(sendTextMessageSpy).toHaveBeenLastCalledWith('test-chat-id', 'Mock output for changelog');
+
+    // Test /plugins
+    await messageHandler({
+      chatId: 'test-chat-id',
+      senderId: 'user-123',
+      text: '/plugins list',
+      isP2P: false
+    });
+    expect(execFileMock).toHaveBeenLastCalledWith('agy', ['plugin', 'list'], expect.any(Function));
+    expect(sendTextMessageSpy).toHaveBeenLastCalledWith('test-chat-id', 'Mock output for plugin list');
+
+    // Test /update
+    await messageHandler({
+      chatId: 'test-chat-id',
+      senderId: 'user-123',
+      text: '/update',
+      isP2P: false
+    });
+    expect(execFileMock).toHaveBeenLastCalledWith('agy', ['update'], expect.any(Function));
+    expect(sendTextMessageSpy).toHaveBeenLastCalledWith('test-chat-id', 'Mock output for update');
+
+    // Test /models
+    await messageHandler({
+      chatId: 'test-chat-id',
+      senderId: 'user-123',
+      text: '/models',
+      isP2P: false
+    });
+    expect(execFileMock).toHaveBeenLastCalledWith('agy', ['models'], expect.any(Function));
+    expect(sendTextMessageSpy).toHaveBeenLastCalledWith('test-chat-id', 'Mock output for models');
   });
 
   it('should handle settings actions in actionHandler and return updated card synchronously', async () => {

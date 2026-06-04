@@ -5,7 +5,7 @@ import { SessionWatcher } from './session-watcher.js';
 import { EventClassifier } from './event-classifier.js';
 import { FeishuClient } from './feishu-client.js';
 import * as CardBuilder from './card-builder.js';
-import { spawn } from 'child_process';
+import { spawn, execFile } from 'child_process';
 import fs from 'fs';
 import path from 'path';
 import { t } from './i18n.js';
@@ -251,6 +251,66 @@ function resolveSession(arg) {
   return registry.get(arg) || null;
 }
 
+function parseAgyFlags(argStr) {
+  if (!argStr) return { flags: [], remaining: '' };
+  const words = argStr.trim().split(/\s+/);
+  const flags = [];
+  let i = 0;
+  while (i < words.length) {
+    const word = words[i];
+    if (word === '--sandbox') {
+      flags.push('--sandbox');
+      i++;
+    } else if (word === '--dangerously-skip-permissions') {
+      flags.push('--dangerously-skip-permissions');
+      i++;
+    } else if (word === '--model') {
+      if (i + 1 < words.length) {
+        flags.push('--model', words[i + 1]);
+        i += 2;
+      } else {
+        break;
+      }
+    } else if (word === '--add-dir') {
+      if (i + 1 < words.length) {
+        flags.push('--add-dir', words[i + 1]);
+        i += 2;
+      } else {
+        break;
+      }
+    } else {
+      break;
+    }
+  }
+  const remaining = words.slice(i).join(' ');
+  return { flags, remaining };
+}
+
+function runAgySubcommand(chatId, args, startMsgKey) {
+  if (startMsgKey) {
+    feishu.sendTextMessage(chatId, t(startMsgKey));
+  }
+  execFile('agy', args, (err, stdout, stderr) => {
+    let output = '';
+    if (stdout) {
+      output += stdout;
+    }
+    if (stderr) {
+      output += '\n' + stderr;
+    }
+    if (err) {
+      output += '\n❌ Error: ' + err.message;
+    }
+    // Clean up any ANSI escape codes
+    const cleanOutput = output.replace(/\x1b\[[^m]*m|[\x00-\x08\x0e-\x1f\x7f]/g, '').trim();
+    if (!cleanOutput) {
+      feishu.sendTextMessage(chatId, '✅ Command executed successfully.');
+    } else {
+      feishu.sendTextMessage(chatId, cleanOutput);
+    }
+  });
+}
+
 const deleteSessionFiles = (sessionId) => {
   const brainDir = path.join(config.agy.brainDir, sessionId);
   try {
@@ -302,13 +362,19 @@ export const messageHandler = async ({ chatId, senderId, text, isP2P }) => {
         return;
       }
 
+      const { flags, remaining } = parseAgyFlags(arg);
+      if (!remaining) {
+        await feishu.sendTextMessage(chatId, t('new_usage'));
+        return;
+      }
+
       // Guard against excessively long prompts
-      if (arg.length > MAX_NEW_ARG_LENGTH) {
+      if (remaining.length > MAX_NEW_ARG_LENGTH) {
         await feishu.sendTextMessage(chatId, `❌ Task prompt too long (max ${MAX_NEW_ARG_LENGTH} characters).`);
         return;
       }
 
-      await feishu.sendTextMessage(chatId, t('new_start', arg));
+      await feishu.sendTextMessage(chatId, t('new_start', remaining));
       
       // Clean environment to avoid agent-specific variables causing conflicts
       const cleanEnv = { ...process.env, FORCE_COLOR: '1' };
@@ -339,9 +405,9 @@ export const messageHandler = async ({ chatId, senderId, text, isP2P }) => {
             'else:\n' +
             '    try: pty._copy(fd)\n' +
             '    except: pass',
-            'agy', '-i', arg
+            'agy', ...flags, '-i', remaining
           ]
-        : ['-i', arg];
+        : [...flags, '-i', remaining];
 
       const cp = spawn(cmd, spawnArgs, {
         env: cleanEnv
@@ -471,9 +537,15 @@ export const messageHandler = async ({ chatId, senderId, text, isP2P }) => {
         await feishu.sendTextMessage(chatId, t('resume_usage'));
         return;
       }
-      const session = resolveSession(arg);
+
+      const parts = arg.trim().split(/\s+/);
+      const sessionArg = parts[0];
+      const flagsStr = parts.slice(1).join(' ');
+      const { flags } = parseAgyFlags(flagsStr);
+
+      const session = resolveSession(sessionArg);
       if (!session) {
-        await feishu.sendTextMessage(chatId, t('switch_fail', arg));
+        await feishu.sendTextMessage(chatId, t('switch_fail', sessionArg));
         return;
       }
 
@@ -515,9 +587,9 @@ export const messageHandler = async ({ chatId, senderId, text, isP2P }) => {
             'else:\n' +
             '    try: pty._copy(fd)\n' +
             '    except: pass',
-            'agy', '--conversation', session.id
+            'agy', ...flags, '--conversation', session.id
           ]
-        : ['--conversation', session.id];
+        : [...flags, '--conversation', session.id];
 
       const cp = spawn(cmd, spawnArgs, {
         env: cleanEnv
@@ -692,6 +764,27 @@ export const messageHandler = async ({ chatId, senderId, text, isP2P }) => {
 
     if (command === '/help') {
       await feishu.sendTextMessage(chatId, t('help_content'));
+      return;
+    }
+
+    if (command === '/changelog') {
+      runAgySubcommand(chatId, ['changelog']);
+      return;
+    }
+
+    if (command === '/plugins' || command === '/plugin') {
+      const subArgs = arg ? arg.trim().split(/\s+/) : [];
+      runAgySubcommand(chatId, ['plugin', ...subArgs]);
+      return;
+    }
+
+    if (command === '/update') {
+      runAgySubcommand(chatId, ['update'], 'update_start');
+      return;
+    }
+
+    if (command === '/models') {
+      runAgySubcommand(chatId, ['models']);
       return;
     }
 

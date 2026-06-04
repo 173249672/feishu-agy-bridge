@@ -124,11 +124,16 @@ Type these commands directly in your chat with the bot to manage agy:
 
 | Command | Action |
 |:---|:---|
-| `/new <prompt>` | Start a new `agy` session with the given initial prompt. |
+| `/new [flags] <prompt>` | Start a new `agy` session with the given initial prompt. Supports optional flags: `--sandbox`, `--dangerously-skip-permissions`, `--model <model>`, and `--add-dir <dir>`. |
 | `/list` | List all active agy sessions monitored by the bridge. Shows status (🟢 running, ⚪ stopped) and default session (marked with ⭐). |
 | `/switch <index/session-id>` | Switch the default active session to route messages to. Accepts an integer index or session ID. |
+| `/resume <index/session-id> [flags]` | Resume and reactivate a stopped/inactive session (⚪), and set it as the default session. Supports optional flags: `--sandbox`, `--dangerously-skip-permissions`, `--model <model>`, and `--add-dir <dir>`. |
 | `/model` | Show the current model and list all available model aliases. |
 | `/model <model-alias>` | Switch the model (aliases: `flash`, `medium`, `claude`, `gemini`). |
+| `/models` | List all available models dynamically from the provider. |
+| `/plugins [subcommand]` | Manage plugins (e.g. `/plugins list`, `/plugins install <plugin>`). |
+| `/changelog` | Show official changelog and release notes. |
+| `/update` | Update the AGY CLI to the latest version. |
 | `/stop [index/session-id]` | Kill the target session process (defaults to the default session) and stop watching its log. Accepts index or ID. |
 | `/del <index/session-id/all>` | Kill the target session process, remove it from registry, and delete its local transcript/db files. Use `/del all` to clean all sessions. |
 | `/settings` | Open the interactive settings card to configure language (zh/en), theme template, and widescreen mode. |

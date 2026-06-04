@@ -124,11 +124,16 @@ feishu-client.js  ──► messageHandler / actionHandler  (index.js)
 
 | 指令 | 描述/行为 |
 |:---|:---|
-| `/new <prompt>` | 在后台启动一个新的 `agy` 交互会话，并指定初始 Prompt。 |
+| `/new [参数] <prompt>` | 在后台启动一个新的 `agy` 交互会话，并指定初始 Prompt。支持可选参数：`--sandbox`, `--dangerously-skip-permissions`, `--model <model>` 和 `--add-dir <dir>`。 |
 | `/list` | 列出当前桥接器正在监听的所有活跃 agy 会话，显示运行状态（🟢 运行中，⚪ 已停止）和默认会话（⭐ 标识）。 |
 | `/switch <序号/会话ID>` | 切换默认的交互会话，支持输入序号或会话 ID。 |
+| `/resume <序号/会话ID> [参数]` | 恢复并重新激活已停止/不活跃的会话（⚪），并设为默认会话。支持可选参数：`--sandbox`, `--dangerously-skip-permissions`, `--model <model>` 和 `--add-dir <dir>`。 |
 | `/model` | 显示当前使用的模型及全部可用别名列表。 |
 | `/model <model-alias>` | 切换当前会话所使用的模型配置（别名支持: `flash`, `medium`, `claude`, `gemini`）。 |
+| `/models` | 获取并动态列出所有可用的底层模型。 |
+| `/plugins [子命令]` | 管理插件（例如：`/plugins list`, `/plugins install <插件名>`）。 |
+| `/changelog` | 显示官方更新日志和发布说明。 |
+| `/update` | 更新 AGY CLI 到最新版本。 |
 | `/stop [序号/会话ID]` | 停止目标会话的运行进程（默认停止当前会话），并停止对其日志的监听。支持输入序号或会话 ID。 |
 | `/del <序号/会话ID/all>` | 强制结束目标会话，并清理其本地的日志和 SQLite 数据库。使用 `/del all` 可一键清理所有会话。 |
 | `/settings` | 打开交互式设置菜单卡片，支持修改语言（中/英）、卡片主题与宽屏布局开关。 |
