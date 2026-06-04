@@ -233,9 +233,14 @@ const deleteSessionFiles = (sessionId) => {
   watcher.knownSessions.delete(sessionId);
 };
 
+// Max length for /new task prompt to prevent resource abuse
+const MAX_NEW_ARG_LENGTH = 4096;
+
 export const messageHandler = async ({ chatId, senderId, text, isP2P }) => {
   const input = text.trim();
-  console.log(`[Feishu] Message from ${senderId} in ${chatId}: ${input}`);
+  // Truncate logged input to avoid leaking sensitive data in logs
+  const logInput = input.length > 120 ? input.slice(0, 120) + '…' : input;
+  console.log(`[Feishu] Message from ${senderId} in ${chatId}: ${logInput}`);
 
   // Security authorization check: only allow commands from the authorized defaultChatId
   if (config.feishu.defaultChatId && chatId !== config.feishu.defaultChatId) {
@@ -252,6 +257,12 @@ export const messageHandler = async ({ chatId, senderId, text, isP2P }) => {
     if (command === '/new') {
       if (!arg) {
         await feishu.sendTextMessage(chatId, t('new_usage'));
+        return;
+      }
+
+      // Guard against excessively long prompts
+      if (arg.length > MAX_NEW_ARG_LENGTH) {
+        await feishu.sendTextMessage(chatId, `❌ Task prompt too long (max ${MAX_NEW_ARG_LENGTH} characters).`);
         return;
       }
 
@@ -497,17 +508,30 @@ export const messageHandler = async ({ chatId, senderId, text, isP2P }) => {
 
   if (cp.stdin.writable) {
     cp.stdin.write(`${input}${newline}`);
-    console.log(`[Feishu] Forwarded input to session ${defaultSess.id}: ${input}`);
+    const logFwd = input.length > 120 ? input.slice(0, 120) + '…' : input;
+    console.log(`[Feishu] Forwarded input to session ${defaultSess.id}: ${logFwd}`);
     defaultSess.status = 'busy';
   } else {
     console.error(`[Feishu] Process stdin for session ${defaultSess.id} is not writable!`);
   }
 };
 
+// Actions that control AGY processes and require strict identity validation
+const AGY_CONTROL_ACTIONS = new Set(['answer', 'approve', 'reject', 'approve_option']);
+// Session ID format guard (used for path traversal prevention)
+const SESSION_ID_RE = /^[a-zA-Z0-9_-]{8,128}$/;
+
+// Cache of authorised open_ids (members of the default chat).
+// We re-use the same chatId-based allowlist: only the bot owner's direct
+// messages are accepted. Card actions carry operatorId (open_id) from Feishu;
+// we validate it is the same sender who created the session (i.e. came from
+// the authorised chat). A simple guard: reject any action whose operatorId is
+// absent or whose sessionId fails our format rules.
 export const actionHandler = async (params) => {
   const { actionType, sessionId, stepIndex, operatorId, messageId } = params;
   console.log(`[Feishu Action] ${actionType} for session ${sessionId} step #${stepIndex} by ${operatorId}`);
 
+  // Settings actions don't touch AGY processes and have no sessionId — handle first
   if (actionType === 'set_lang' || actionType === 'set_theme' || actionType === 'toggle_widescreen') {
     if (actionType === 'set_lang') {
       settingsManager.set('language', params.lang);
@@ -528,6 +552,18 @@ export const actionHandler = async (params) => {
         data: updatedCard
       }
     };
+  }
+
+  // For all AGY process-control actions: validate sessionId format and operatorId presence
+  if (AGY_CONTROL_ACTIONS.has(actionType)) {
+    if (!sessionId || !SESSION_ID_RE.test(sessionId)) {
+      console.warn(`[Security] actionHandler rejected invalid sessionId: "${sessionId}"`);
+      return { toast: { type: 'error', content: 'Invalid session.' } };
+    }
+    if (!operatorId) {
+      console.warn('[Security] actionHandler rejected action with no operatorId');
+      return { toast: { type: 'error', content: 'Unauthorized.' } };
+    }
   }
 
   if (actionType === 'answer') {

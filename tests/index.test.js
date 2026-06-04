@@ -592,7 +592,8 @@ describe('Session management index commands', () => {
     const res = await actionHandler({
       actionType: 'set_lang',
       lang: 'en',
-      messageId: 'msg-123'
+      messageId: 'msg-123',
+      operatorId: 'ou_test-operator'
     });
 
     expect(settingsManager.get('language')).toBe('en');
@@ -618,7 +619,8 @@ describe('Session management index commands', () => {
       sessionId: 'test-session-123',
       stepIndex: 5,
       optionIndex: 1,
-      text: 'Yes, and always allow non-workspace access'
+      text: 'Yes, and always allow non-workspace access',
+      operatorId: 'ou_test-operator'
     });
 
     expect(injectMessageSpy).toHaveBeenCalledWith('test-session-123', 'Yes, and always allow non-workspace access');

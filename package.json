@@ -15,5 +15,8 @@
   },
   "devDependencies": {
     "vitest": "^1.6.0"
+  },
+  "overrides": {
+    "axios": "^1.16.0"
   }
 }

@@ -125,7 +125,16 @@ if __name__ == "__main__":
     if len(sys.argv) < 2:
         sys.exit(1)
     db_path = sys.argv[1]
-    res = get_latest_pending_step(db_path)
+
+    # Security: only allow reading SQLite files within the user home directory
+    import os
+    home_dir = os.path.expanduser("~")
+    real_db_path = os.path.realpath(db_path)
+    if not real_db_path.startswith(home_dir + os.sep):
+        sys.stderr.write(f"[db-helper] Security: path '{real_db_path}' is outside home directory. Aborted.\n")
+        sys.exit(1)
+
+    res = get_latest_pending_step(real_db_path)
     if res:
         print(json.dumps(res))
     else:
