@@ -152,7 +152,42 @@ describe('index.js session:permission handler', () => {
     // Should NOT send card because lastPermissionKey matches
     expect(sendInteractiveCardSpy).not.toHaveBeenCalled();
 
+  });
+
+  it('should send a duplicate permission card for the same idx and reason if prompt count increases', async () => {
+    const sessionId = 'test-session-perm-002-multi';
+    const chatId = 'test-perm-chat-002-multi';
+    const idx = 10;
+    const reason = 'Duplicate test';
+
+    // Mock active process with stdoutBuffer containing prompts
+    const mockCp = {
+      stdoutBuffer: 'Requesting permission for: command 1\nDo you want to proceed?\nRequesting permission for: command 2\nDo you want to proceed?'
+    };
+    activeProcesses.set(sessionId, mockCp);
+
+    // Initial permission key set with promptCount=1
+    const fakeRegistry = { 
+      feishuChatId: chatId, 
+      status: 'busy', 
+      lastPermissionIdx: idx, 
+      lastPermissionKey: `${idx}:${reason}:1`, 
+      lastMessageId: null 
+    };
+    const sendInteractiveCardSpy = vi.spyOn(feishu, 'sendInteractiveCard').mockResolvedValue('msg-002');
+
+    const registryModule = await import('../src/session-registry.js');
+    const registrySpy = vi.spyOn(registryModule.SessionRegistry.prototype, 'get').mockReturnValue(fakeRegistry);
+
+    const listeners = watcher.rawListeners('session:permission');
+    await listeners[0].call(watcher, { sessionId, idx, reason });
+
+    // Should send card because promptCount matches both phrases twice, so promptCount=4, key is different
+    expect(sendInteractiveCardSpy).toHaveBeenCalled();
+    expect(fakeRegistry.lastPermissionKey).toBe(`${idx}:${reason}:4`);
+
     registrySpy.mockRestore();
+    activeProcesses.delete(sessionId);
   });
 
   it('should send a new permission card if the same idx has a different reason', async () => {

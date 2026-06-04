@@ -182,7 +182,14 @@ watcher.on('session:permission', async ({ sessionId, idx, reason }) => {
   const session = registry.get(sessionId);
   if (!session) return;
 
-  const permKey = `${idx}:${reason}`;
+  const cp = activeProcesses.get(sessionId);
+  let promptCount = 0;
+  if (cp && cp.stdoutBuffer) {
+    const matches = cp.stdoutBuffer.match(/Requesting permission for:|Do you want to proceed\?/gi);
+    promptCount = matches ? matches.length : 0;
+  }
+
+  const permKey = promptCount > 0 ? `${idx}:${reason}:${promptCount}` : `${idx}:${reason}`;
   if (session.lastPermissionKey === permKey) return;
   session.lastPermissionKey = permKey;
   session.lastPermissionIdx = idx;
@@ -190,7 +197,6 @@ watcher.on('session:permission', async ({ sessionId, idx, reason }) => {
   session.status = 'waiting_permission';
 
   let options = null;
-  const cp = activeProcesses.get(sessionId);
   if (cp && cp.stdoutBuffer) {
     options = parsePermissionOptions(cp.stdoutBuffer);
     if (!options) {
