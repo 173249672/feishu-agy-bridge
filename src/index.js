@@ -23,10 +23,10 @@ const newline = process.platform === 'darwin' ? '\r' : '\n';
 
 watcher.on('session:new', ({ sessionId, filePath }) => {
   console.log(`[Watcher] New session detected: ${sessionId}`);
-  registry.register(sessionId, filePath);
 
   const pending = spawnedQueue.shift();
   if (pending) {
+    registry.register(sessionId, filePath);
     activeProcesses.set(sessionId, pending.cp);
     const session = registry.get(sessionId);
     if (session) {
@@ -36,13 +36,20 @@ watcher.on('session:new', ({ sessionId, filePath }) => {
     console.log(`[Registry] Set default session to ${sessionId} (spawned via /new)`);
   } else {
     // If not in spawnedQueue, this session was spawned internally (e.g., a subagent).
-    // Inherit the chatId of the current default active session.
+    // Inherit the chatId and parentId from the current default active session.
     const defaultSess = registry.getDefault();
+    const parentId = defaultSess ? defaultSess.id : null;
+    registry.register(sessionId, filePath, parentId);
     const session = registry.get(sessionId);
-    if (session && defaultSess) {
-      session.feishuChatId = defaultSess.feishuChatId;
-      console.log(`[Registry] Session ${sessionId} inherited chatId ${defaultSess.feishuChatId} from default session ${defaultSess.id}`);
+    if (session) {
+      if (defaultSess) {
+        session.feishuChatId = defaultSess.feishuChatId;
+        console.log(`[Registry] Sub-agent ${sessionId} inherited chatId ${defaultSess.feishuChatId}, parentId=${parentId}`);
+      } else {
+        session.feishuChatId = config.feishu.defaultChatId;
+      }
     }
+    registry.setDefault(sessionId);
   }
 });
 
@@ -90,7 +97,7 @@ watcher.on('session:question', async ({ sessionId, idx, questionData }) => {
   session.lastQuestionIdx = idx;
 
   session.status = 'waiting_input';
-  const card = CardBuilder.buildQuestionCard(sessionId, idx, questionData);
+  const card = CardBuilder.buildQuestionCard(sessionId, idx, questionData, session.parentId);
   const msgId = await feishu.sendInteractiveCard(session.feishuChatId, card);
   session.lastMessageId = msgId;
 });
@@ -165,7 +172,7 @@ watcher.on('session:permission', async ({ sessionId, idx, reason }) => {
     options = parsePermissionOptions(cp.stdoutBuffer);
   }
 
-  const card = CardBuilder.buildPermissionCard(sessionId, idx, reason, options);
+  const card = CardBuilder.buildPermissionCard(sessionId, idx, reason, options, session.parentId);
   const msgId = await feishu.sendInteractiveCard(session.feishuChatId, card);
   session.lastMessageId = msgId;
 });

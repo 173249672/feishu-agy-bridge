@@ -4,7 +4,7 @@ export class SessionRegistry {
     this.defaultSessionId = null;
   }
 
-  register(sessionId, path) {
+  register(sessionId, path, parentId = null) {
     if (!this.sessions.has(sessionId)) {
       this.sessions.set(sessionId, {
         id: sessionId,
@@ -12,7 +12,8 @@ export class SessionRegistry {
         startTime: new Date(),
         status: 'active',
         feishuChatId: null,
-        lastMessageId: null
+        lastMessageId: null,
+        parentId: parentId
       });
       if (!this.defaultSessionId) {
         this.defaultSessionId = sessionId;

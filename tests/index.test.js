@@ -122,7 +122,7 @@ describe('index.js session:permission handler', () => {
     // Invoke the handler
     await listeners[0].call(watcher, { sessionId, idx, reason });
 
-    expect(buildPermissionCardSpy).toHaveBeenCalledWith(sessionId, idx, reason, null);
+    expect(buildPermissionCardSpy).toHaveBeenCalledWith(sessionId, idx, reason, null, undefined);
     expect(sendInteractiveCardSpy).toHaveBeenCalledWith(chatId, expect.any(Object));
     expect(fakeRegistry.status).toBe('waiting_permission');
     expect(fakeRegistry.lastPermissionIdx).toBe(idx);
@@ -215,7 +215,8 @@ settings.json)
         { idx: 2, text: "Yes, and always allow in this conversation for commands that start with 'git status'" },
         { idx: 3, text: "Yes, and always allow for commands that start with 'git status' (Persist to settings.json)" },
         { idx: 4, text: 'No' }
-      ]
+      ],
+      undefined
     );
 
     activeProcesses.delete(sessionId);

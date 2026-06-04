@@ -73,4 +73,27 @@ describe('CardBuilder', () => {
     expect(card.elements[1].actions[1].value.optionIndex).toBe(1);
     expect(card.elements[1].actions[2].value.optionIndex).toBe(2);
   });
+
+  it('should render subagent trace when parentId is passed to buildPermissionCard and buildQuestionCard', () => {
+    const permCard = CardBuilder.buildPermissionCard('sub-session', 5, 'Reason text', null, 'parent-session');
+    expect(permCard.elements[0].text.content).toContain('子代理');
+    expect(permCard.elements[0].text.content).toContain('parent-session');
+
+    const questionData = {
+      questions: [{
+        question: 'What to do?',
+        options: ['Opt 1', 'Opt 2']
+      }]
+    };
+    const questCard = CardBuilder.buildQuestionCard('sub-session', 5, questionData, 'parent-session');
+    expect(questCard.elements[0].text.content).toContain('子代理');
+    expect(questCard.elements[0].text.content).toContain('parent-session');
+  });
+
+  it('should truncate permission reason if it exceeds 800 characters', () => {
+    const longReason = 'A'.repeat(1000);
+    const card = CardBuilder.buildPermissionCard('sess1', 5, longReason);
+    expect(card.elements[0].text.content.length).toBeLessThan(1000);
+    expect(card.elements[0].text.content).toContain('（内容过长，已截断）');
+  });
 });

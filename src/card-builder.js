@@ -10,15 +10,20 @@ function getCardConfig(defaultColor) {
   };
 }
 
-export function buildPermissionCard(sessionId, stepIndex, reason, options = null) {
+export function buildPermissionCard(sessionId, stepIndex, reason, options = null, parentId = null) {
   const cfg = getCardConfig('yellow');
+  const truncatedReason = reason.length > 800
+    ? reason.slice(0, 800) + `\n\n_（内容过长，已截断）_`
+    : reason;
+
+  const subagentLine = parentId ? `\n${t('card_subagent_of', parentId)}` : '';
   
   const cardElements = [
     {
       tag: 'div',
       text: {
         tag: 'lark_md',
-        content: `**${t('card_session_id')}**: \`${sessionId}\`\n**${t('card_step')}**: #${stepIndex}\n\n**${t('card_reason')}**:\n${reason}`
+        content: `**${t('card_session_id')}**: \`${sessionId}\`${subagentLine}\n**${t('card_step')}**: #${stepIndex}\n\n**${t('card_reason')}**:\n${truncatedReason}`
       }
     }
   ];
@@ -136,7 +141,7 @@ export function buildStatusCard(sessionId, statusText) {
   };
 }
 
-export function buildQuestionCard(sessionId, stepIndex, questionData) {
+export function buildQuestionCard(sessionId, stepIndex, questionData, parentId = null) {
   const cfg = getCardConfig('violet');
   const firstQuestion = questionData.questions[0];
   const questionText = firstQuestion.question;
@@ -161,6 +166,8 @@ export function buildQuestionCard(sessionId, stepIndex, questionData) {
     };
   });
 
+  const subagentLine = parentId ? `\n${t('card_subagent_of', parentId)}` : '';
+
   return {
     config: { wide_screen_mode: cfg.wideScreen },
     header: {
@@ -172,7 +179,7 @@ export function buildQuestionCard(sessionId, stepIndex, questionData) {
         tag: 'div',
         text: {
           tag: 'lark_md',
-          content: `**${t('card_session_id')}**: \`${sessionId}\`\n**${t('card_step')}**: #${stepIndex}\n\n**${t('card_question')}**:\n${questionText}\n\n**${t('card_options')}**:\n${optionsMarkdown}`
+          content: `**${t('card_session_id')}**: \`${sessionId}\`${subagentLine}\n**${t('card_step')}**: #${stepIndex}\n\n**${t('card_question')}**:\n${questionText}\n\n**${t('card_options')}**:\n${optionsMarkdown}`
         }
       },
       {

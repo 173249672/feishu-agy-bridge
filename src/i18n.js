@@ -54,6 +54,7 @@ const translations = {
     card_summary: '完成摘要',
     card_question: '问题',
     card_options: '选项',
+    card_subagent_of: (parentId) => `🔗 子代理（派生自 \`${parentId}\`）`,
 
     // Settings Interface
     settings_title: '⚙️ Bridge 设置 (Settings)',
@@ -116,6 +117,7 @@ const translations = {
     card_summary: 'Summary',
     card_question: 'Question',
     card_options: 'Options',
+    card_subagent_of: (parentId) => `🔗 Sub-agent (spawned by \`${parentId}\`)`,
 
     // Settings Interface
     settings_title: '⚙️ Bridge Settings',

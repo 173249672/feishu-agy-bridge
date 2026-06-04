@@ -31,7 +31,7 @@ export class SessionWatcher extends EventEmitter {
     this.watcher = chokidar.watch([this.brainDir, this.conversationsDir], {
       persistent: true,
       ignoreInitial: false,
-      depth: 4,
+      depth: 6,
     });
 
     this.watcher.on('ready', () => {
@@ -44,11 +44,15 @@ export class SessionWatcher extends EventEmitter {
         const sessionId = this.extractSessionId(filePath);
         let startOffset = 0;
         if (!this.isReady) {
-          try {
-            const stats = fs.statSync(filePath);
-            startOffset = stats.size;
-          } catch (err) {
-            startOffset = 0;
+          // During initial scan: skip existing content in known sessions to avoid replaying old events.
+          // For newly discovered sessions (sub-agents spawned before bridge started), read from beginning.
+          if (this.knownSessions.has(sessionId)) {
+            try {
+              const stats = fs.statSync(filePath);
+              startOffset = stats.size;
+            } catch (err) {
+              startOffset = 0;
+            }
           }
         }
         this.fileOffsets.set(filePath, startOffset);

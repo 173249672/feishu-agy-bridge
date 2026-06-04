@@ -17,4 +17,12 @@ describe('SessionRegistry', () => {
     registry.setDefault('session2');
     expect(registry.getDefault().id).toBe('session2');
   });
+
+  it('should support parentId registration for subagents', () => {
+    const registry = new SessionRegistry();
+    registry.register('session1', '/path/to/log1');
+    registry.register('subsession', '/path/to/log2', 'session1');
+    expect(registry.get('subsession').parentId).toBe('session1');
+    expect(registry.get('session1').parentId).toBeNull();
+  });
 });
