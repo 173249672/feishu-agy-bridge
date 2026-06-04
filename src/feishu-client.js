@@ -26,14 +26,14 @@ export class FeishuClient {
         });
       },
       'card.action.trigger': async (data) => {
-        const { action, operator, open_message_id } = data;
+        const { action, operator, messageId } = data;
         if (!action || !action.value) return {};
         
         const result = await actionHandler({
           ...action.value,
           actionType: action.value.action,
-          operatorId: operator.open_id,
-          messageId: open_message_id
+          operatorId: operator?.openId,
+          messageId: messageId
         });
 
         return result || {};
