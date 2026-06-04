@@ -1,4 +1,13 @@
 import * as lark from '@larksuiteoapi/node-sdk';
+import { getLocalIp } from './config.js';
+
+function replaceFileUrls(obj, port = process.env.FILE_SERVER_PORT || '8080') {
+  if (!obj) return obj;
+  const ip = getLocalIp();
+  const jsonStr = typeof obj === 'string' ? obj : JSON.stringify(obj);
+  const replaced = jsonStr.replace(/file:\/\/\//g, `http://${ip}:${port}/`);
+  return typeof obj === 'string' ? replaced : JSON.parse(replaced);
+}
 
 export class FeishuClient {
   constructor(appId, appSecret, defaultChatId) {
@@ -57,22 +66,24 @@ export class FeishuClient {
   async sendInteractiveCard(chatId, cardPayload) {
     const targetChat = chatId || this.defaultChatId;
     if (!targetChat) return null;
+    const replacedPayload = replaceFileUrls(cardPayload);
     const response = await this.client.im.v1.message.create({
       params: { receive_id_type: this.getReceiveIdType(targetChat) },
       data: {
         receive_id: targetChat,
         msg_type: 'interactive',
-        content: JSON.stringify(cardPayload)
+        content: JSON.stringify(replacedPayload)
       }
     });
     return response.data.message_id;
   }
 
   async updateCard(messageId, cardPayload) {
+    const replacedPayload = replaceFileUrls(cardPayload);
     await this.client.im.v1.message.patch({
       path: { message_id: messageId },
       data: {
-        content: JSON.stringify(cardPayload)
+        content: JSON.stringify(replacedPayload)
       }
     });
   }
@@ -80,12 +91,13 @@ export class FeishuClient {
   async sendTextMessage(chatId, text) {
     const targetChat = chatId || this.defaultChatId;
     if (!targetChat) return null;
+    const replacedText = replaceFileUrls(text);
     await this.client.im.v1.message.create({
       params: { receive_id_type: this.getReceiveIdType(targetChat) },
       data: {
         receive_id: targetChat,
         msg_type: 'text',
-        content: JSON.stringify({ text })
+        content: JSON.stringify({ text: replacedText })
       }
     });
   }

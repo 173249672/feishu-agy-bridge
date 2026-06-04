@@ -1,4 +1,4 @@
-import { config } from './config.js';
+import { config, getLocalIp } from './config.js';
 import { SessionRegistry } from './session-registry.js';
 import { AGYInjector } from './agy-injector.js';
 import { SessionWatcher } from './session-watcher.js';
@@ -193,7 +193,7 @@ watcher.on('session:permission', async ({ sessionId, idx, reason }) => {
   if (cp && cp.stdoutBuffer) {
     options = parsePermissionOptions(cp.stdoutBuffer);
     if (!options) {
-      for (let attempt = 1; attempt <= 5; attempt++) {
+      for (let attempt = 1; attempt <= 10; attempt++) {
         await new Promise(resolve => setTimeout(resolve, 100));
         options = parsePermissionOptions(cp.stdoutBuffer);
         if (options) {
@@ -759,7 +759,8 @@ async function main() {
   console.log('Starting Feishu-AGY Bridge...');
   watcher.start();
   await feishu.start(messageHandler, actionHandler);
-  console.log('Feishu-AGY Bridge is running.');
+  const ip = getLocalIp();
+  console.log(`Feishu-AGY Bridge is running. Local IP: ${ip}`);
 }
 
 if (!process.env.VITEST) {
