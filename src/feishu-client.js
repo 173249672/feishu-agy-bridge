@@ -32,7 +32,7 @@ export class FeishuClient {
         const result = await actionHandler({
           ...action.value,
           actionType: action.value.action,
-          operatorId: operator?.openId,
+          operatorId: operator?.open_id || operator?.openId || data?.open_id || data?.openId,
           messageId: messageId
         });
 
