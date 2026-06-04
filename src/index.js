@@ -51,7 +51,6 @@ watcher.on('session:new', ({ sessionId, filePath }) => {
         session.feishuChatId = config.feishu.defaultChatId;
       }
     }
-    registry.setDefault(sessionId);
   }
 });
 
