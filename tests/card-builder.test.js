@@ -96,4 +96,10 @@ describe('CardBuilder', () => {
     expect(card.elements[0].text.content.length).toBeLessThan(1000);
     expect(card.elements[0].text.content).toContain('（内容过长，已截断）');
   });
+
+  it('should truncate completed card summary if it exceeds 2000 characters', () => {
+    const longSummary = 'S'.repeat(2200);
+    const card = CardBuilder.buildCompletedCard('sess1', 5, longSummary, true);
+    expect(card.elements[0].text.content).toContain('（内容过长，已截断）');
+  });
 });

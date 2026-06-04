@@ -103,6 +103,10 @@ export function buildCompletedCard(sessionId, stepIndex, summary, isActive = tru
   const title = isActive ? t('card_completed_waiting') : t('card_completed_done');
   const footer = isActive ? t('card_completed_tip_active') : t('card_completed_tip_done');
 
+  const truncatedSummary = summary.length > 2000
+    ? summary.slice(0, 2000) + `\n\n_（内容过长，已截断）_`
+    : summary;
+
   return {
     config: { wide_screen_mode: cfg.wideScreen },
     header: {
@@ -114,7 +118,7 @@ export function buildCompletedCard(sessionId, stepIndex, summary, isActive = tru
         tag: 'div',
         text: {
           tag: 'lark_md',
-          content: `**${t('card_session_id')}**: \`${sessionId}\`\n\n**${t('card_summary')}**:\n${summary.substring(0, 2000)}${footer}`
+          content: `**${t('card_session_id')}**: \`${sessionId}\`\n\n**${t('card_summary')}**:\n${truncatedSummary}${footer}`
         }
       }
     ]
