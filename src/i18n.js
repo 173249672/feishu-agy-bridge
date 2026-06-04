@@ -5,6 +5,9 @@ const translations = {
     // Commands & Notifications
     new_start: (prompt) => `🚀 正在启动新会话，提示词："${prompt}"...`,
     new_fail: (err) => `❌ AGY 启动失败\n\n${err}`,
+    new_usage: '❌ 请指定提示词。例如：\`/new 帮我写一个脚本\`',
+    switch_usage: '❌ 使用方法：\`/switch <序号或会话ID>\`',
+    del_usage: '❌ 使用方法：\`/del <序号或会话ID>\` 或 \`/del all\`',
     list_header: '📋 活动会话：',
     list_empty: '没有找到活动会话。',
     switch_success: (id) => `✅ 已切换默认会话为 \`${id}\``,
@@ -16,7 +19,7 @@ const translations = {
     del_success: (id) => `🗑️ 已删除会话 \`${id}\`。`,
     del_fail: (arg) => `❌ 未找到会话 \`${arg}\`。`,
     model_list_header: (curr) => `🤖 当前模型: \`${curr}\`\n\n📋 可用模型:\n`,
-    model_usage: '\n使用方法: `/model <模型别名>`',
+    model_usage: '\n\n使用方法: `/model <模型别名>`',
     model_success: (model) => `✅ 模型已切换为 \`${model}\``,
     model_fail: (err) => `❌ 切换模型失败: ${err}`,
     unknown_command: (cmd) => `❌ 未知指令: ${cmd}`,
@@ -47,6 +50,9 @@ const translations = {
     card_completed_tip_done: '\n\n---\n🏁 **提示**: 会话已结束，如需开始新任务请发送 `/new <提示词>`。',
     card_question_title: '❓ AGY 提问 (需要您的决策)',
     card_question_btn_prefix: '选择 ',
+    card_summary: '完成摘要',
+    card_question: '问题',
+    card_options: '选项',
 
     // Settings Interface
     settings_title: '⚙️ Bridge 设置 (Settings)',
@@ -60,6 +66,9 @@ const translations = {
     // Commands & Notifications
     new_start: (prompt) => `🚀 Starting new session with prompt: "${prompt}"...`,
     new_fail: (err) => `❌ AGY failed to start\n\n${err}`,
+    new_usage: '❌ Please specify a prompt. Example: \`/new help me write a script\`',
+    switch_usage: '❌ Usage: \`/switch <index or session-id>\`',
+    del_usage: '❌ Usage: \`/del <index or session-id>\` or \`/del all\`',
     list_header: '📋 Active Sessions:',
     list_empty: 'No sessions found.',
     switch_success: (id) => `✅ Switched default session to \`${id}\``,
@@ -71,7 +80,7 @@ const translations = {
     del_success: (id) => `🗑️ Deleted session \`${id}\`.`,
     del_fail: (arg) => `❌ Session \`${arg}\` not found.`,
     model_list_header: (curr) => `🤖 Current Model: \`${curr}\`\n\n📋 Available Models:\n`,
-    model_usage: '\nUsage: `/model <model-name>`',
+    model_usage: '\n\nUsage: `/model <model-name>`',
     model_success: (model) => `✅ Model switched to \`${model}\``,
     model_fail: (err) => `❌ Failed to switch model: ${err}`,
     unknown_command: (cmd) => `❌ Unknown command: ${cmd}`,
@@ -102,6 +111,9 @@ const translations = {
     card_completed_tip_done: '\n\n---\n🏁 **Tip**: Session ended. Send `/new <prompt>` to start a new task.',
     card_question_title: '❓ AGY Question (Decision required)',
     card_question_btn_prefix: 'Select ',
+    card_summary: 'Summary',
+    card_question: 'Question',
+    card_options: 'Options',
 
     // Settings Interface
     settings_title: '⚙️ Bridge Settings',
