@@ -2,6 +2,9 @@
 
 `feishu-agy-bridge` is a Node.js daemon that connects Antigravity CLI (`agy`) sessions with Feishu (Lark), enabling real-time status monitoring, alert forwarding, and interactive command execution directly from Feishu chat.
 
+> [!NOTE]
+> There is a **`local-cli-notify`** branch in this repository. If you prefer a notify-only setup where you view session status in Feishu but approve/deny permission prompts and questions locally on your terminal (without interactive buttons in Feishu), please switch to the `local-cli-notify` branch.
+
 ## Features
 
 - **Real-time Status Monitoring**: Tails agy session `transcript.jsonl` logs in real-time via incremental file reads.
