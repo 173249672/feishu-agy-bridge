@@ -24,17 +24,11 @@ export function buildPermissionCard(sessionId, stepIndex, reason, options = null
   ];
 
   if (options && options.length > 0) {
-    const optionsMarkdown = options.map((opt, idx) => {
-      return `${idx + 1}️⃣ ${opt.text}`;
-    }).join('\n\n');
-
-    cardElements[0].text.content += `\n\n**${t('card_options')}**:\n${optionsMarkdown}`;
-
     const buttons = options.map((opt, idx) => {
       return {
         tag: 'button',
-        text: { tag: 'plain_text', content: `${t('card_question_btn_prefix')}${idx + 1}` },
-        type: 'primary',
+        text: { tag: 'plain_text', content: opt.text },
+        type: idx === 0 ? 'primary' : 'default',
         value: {
           action: 'approve_option',
           sessionId,
