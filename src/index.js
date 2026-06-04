@@ -6,6 +6,8 @@ import { EventClassifier } from './event-classifier.js';
 import { FeishuClient } from './feishu-client.js';
 import * as CardBuilder from './card-builder.js';
 import { spawn } from 'child_process';
+import fs from 'fs';
+import path from 'path';
 
 const registry = new SessionRegistry();
 export const injector = new AGYInjector(config.agy.brainDir, config.agy.settingsPath);
@@ -13,8 +15,8 @@ export const watcher = new SessionWatcher(config.agy.brainDir);
 const classifier = new EventClassifier();
 export const feishu = new FeishuClient(config.feishu.appId, config.feishu.appSecret, config.feishu.defaultChatId);
 
-const activeProcesses = new Map();
-const spawnedQueue = [];
+export const activeProcesses = new Map();
+export const spawnedQueue = [];
 const newline = process.platform === 'darwin' ? '\r' : '\n';
 
 watcher.on('session:new', ({ sessionId, filePath }) => {
@@ -134,6 +136,40 @@ watcher.on('error', (err) => {
 });
 
 
+function resolveSession(arg) {
+  if (!arg) return null;
+  const list = registry.list().sort((a, b) => a.startTime - b.startTime);
+  const idx = parseInt(arg, 10);
+  if (!isNaN(idx) && idx >= 1 && idx <= list.length) {
+    return list[idx - 1];
+  }
+  return registry.get(arg) || null;
+}
+
+const deleteSessionFiles = (sessionId) => {
+  const brainDir = path.join(config.agy.brainDir, sessionId);
+  try {
+    if (fs.existsSync(brainDir)) {
+      fs.rmSync(brainDir, { recursive: true, force: true });
+    }
+  } catch (e) {
+    console.error(`Failed to delete brain dir: ${brainDir}`, e);
+  }
+  const conversationsDir = watcher.conversationsDir;
+  const dbExtensions = ['.db', '.db-wal', '.db-shm'];
+  for (const ext of dbExtensions) {
+    const dbFile = path.join(conversationsDir, `${sessionId}${ext}`);
+    try {
+      if (fs.existsSync(dbFile)) {
+        fs.rmSync(dbFile, { force: true });
+      }
+    } catch (e) {
+      console.error(`Failed to delete db file: ${dbFile}`, e);
+    }
+  }
+  watcher.knownSessions.delete(sessionId);
+};
+
 export const messageHandler = async ({ chatId, senderId, text, isP2P }) => {
   const input = text.trim();
   console.log(`[Feishu] Message from ${senderId} in ${chatId}: ${input}`);
@@ -228,15 +264,17 @@ export const messageHandler = async ({ chatId, senderId, text, isP2P }) => {
     }
 
     if (command === '/list') {
-      const list = registry.list();
+      const list = registry.list().sort((a, b) => a.startTime - b.startTime);
       if (list.length === 0) {
         await feishu.sendTextMessage(chatId, 'No active sessions found.');
         return;
       }
       const defaultSess = registry.getDefault();
-      const lines = list.map(s => {
+      const lines = list.map((s, i) => {
         const isDefault = defaultSess && defaultSess.id === s.id ? '⭐ ' : '  ';
-        return `${isDefault}\`${s.id}\` (started: ${s.startTime.toLocaleTimeString()})`;
+        const isActive = activeProcesses.has(s.id);
+        const statusIndicator = isActive ? '🟢' : '⚪';
+        return `[${i + 1}] ${isDefault}${statusIndicator} \`${s.id}\` (started: ${s.startTime.toLocaleTimeString()})`;
       });
       await feishu.sendTextMessage(chatId, `📋 Active Sessions:\n${lines.join('\n')}`);
       return;
@@ -244,14 +282,15 @@ export const messageHandler = async ({ chatId, senderId, text, isP2P }) => {
 
     if (command === '/switch') {
       if (!arg) {
-        await feishu.sendTextMessage(chatId, '❌ Usage: `/switch <session-id>`');
+        await feishu.sendTextMessage(chatId, '❌ Usage: `/switch <index or session-id>`');
         return;
       }
-      const success = registry.setDefault(arg);
-      if (success) {
-        await feishu.sendTextMessage(chatId, `✅ Switched default session to \`${arg}\``);
+      const session = resolveSession(arg);
+      if (session) {
+        registry.setDefault(session.id);
+        await feishu.sendTextMessage(chatId, `✅ Switched default session to \`${session.id}\``);
       } else {
-        await feishu.sendTextMessage(chatId, `❌ Session \`${arg}\` not found in registry.`);
+        await feishu.sendTextMessage(chatId, `❌ Session \`${arg}\` not found.`);
       }
       return;
     }
@@ -278,18 +317,65 @@ export const messageHandler = async ({ chatId, senderId, text, isP2P }) => {
     }
 
     if (command === '/stop') {
-      const defaultSess = registry.getDefault();
-      if (!defaultSess) {
-        await feishu.sendTextMessage(chatId, 'No active default session.');
+      let session;
+      if (arg) {
+        session = resolveSession(arg);
+        if (!session) {
+          await feishu.sendTextMessage(chatId, `❌ Session \`${arg}\` not found.`);
+          return;
+        }
+      } else {
+        session = registry.getDefault();
+        if (!session) {
+          await feishu.sendTextMessage(chatId, 'No active default session.');
+          return;
+        }
+      }
+      const cp = activeProcesses.get(session.id);
+      if (cp) {
+        try { cp.kill('SIGTERM'); } catch (e) {}
+        activeProcesses.delete(session.id);
+        await feishu.sendTextMessage(chatId, `⏹️ Stopped process for session \`${session.id}\``);
+      } else {
+        await feishu.sendTextMessage(chatId, `⚠️ Session \`${session.id}\` is already stopped.`);
+      }
+      return;
+    }
+
+    if (command === '/del') {
+      if (!arg) {
+        await feishu.sendTextMessage(chatId, '❌ Usage: `/del <index or session-id>` or `/del all`');
         return;
       }
-      const cp = activeProcesses.get(defaultSess.id);
-      if (cp) {
-        cp.kill();
-        await feishu.sendTextMessage(chatId, `⏹️ Stopped process for session \`${defaultSess.id}\``);
+      if (arg.toLowerCase() === 'all') {
+        const list = registry.list();
+        let deletedCount = 0;
+        for (const s of list) {
+          const cp = activeProcesses.get(s.id);
+          if (cp) {
+            try { cp.kill('SIGTERM'); } catch (e) {}
+            activeProcesses.delete(s.id);
+          }
+          deleteSessionFiles(s.id);
+          registry.remove(s.id);
+          deletedCount++;
+        }
+        await feishu.sendTextMessage(chatId, `🗑️ Deleted all ${deletedCount} sessions.`);
+        return;
       }
-      registry.remove(defaultSess.id);
-      await feishu.sendTextMessage(chatId, `✅ Stopped watching session \`${defaultSess.id}\``);
+      const session = resolveSession(arg);
+      if (!session) {
+        await feishu.sendTextMessage(chatId, `❌ Session \`${arg}\` not found.`);
+        return;
+      }
+      const cp = activeProcesses.get(session.id);
+      if (cp) {
+        try { cp.kill('SIGTERM'); } catch (e) {}
+        activeProcesses.delete(session.id);
+      }
+      deleteSessionFiles(session.id);
+      registry.remove(session.id);
+      await feishu.sendTextMessage(chatId, `🗑️ Deleted session \`${session.id}\`.`);
       return;
     }
 

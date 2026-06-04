@@ -8,16 +8,19 @@ vi.mock('child_process', () => ({
   spawn: (...args) => spawnMock(...args)
 }));
 
-import { messageHandler, injector, feishu, watcher } from '../src/index.js';
+import { messageHandler, injector, feishu, watcher, activeProcesses, spawnedQueue } from '../src/index.js';
 import { registry } from '../src/session-registry.js';
 import { config } from '../src/config.js';
 import * as CardBuilder from '../src/card-builder.js';
+import fs from 'fs';
 
 describe('index.js messageHandler', () => {
   beforeEach(() => {
     vi.restoreAllMocks();
     spawnMock.mockReset();
     config.feishu.defaultChatId = 'test-chat-id';
+    activeProcesses.clear();
+    spawnedQueue.length = 0;
   });
 
   it('should format and return model list when /model is called without argument', async () => {
@@ -229,5 +232,242 @@ describe('index.js session:agy_error handler and /new close fallback', () => {
       expect.stringContaining('AGY exited with code 1')
     );
     expect(mockCp.errorNotified).toBe(true);
+  });
+});
+
+describe('Session management index commands', () => {
+  let mockList;
+  let mockGet;
+  let mockRemove;
+  let mockSetDefault;
+  let mockGetDefault;
+  let existsSyncSpy;
+  let rmSyncSpy;
+
+  beforeEach(async () => {
+    vi.restoreAllMocks();
+    spawnMock.mockReset();
+    config.feishu.defaultChatId = 'test-chat-id';
+    activeProcesses.clear();
+    spawnedQueue.length = 0;
+
+    const registryModule = await import('../src/session-registry.js');
+    mockList = vi.spyOn(registryModule.SessionRegistry.prototype, 'list');
+    mockGet = vi.spyOn(registryModule.SessionRegistry.prototype, 'get');
+    mockRemove = vi.spyOn(registryModule.SessionRegistry.prototype, 'remove');
+    mockSetDefault = vi.spyOn(registryModule.SessionRegistry.prototype, 'setDefault');
+    mockGetDefault = vi.spyOn(registryModule.SessionRegistry.prototype, 'getDefault');
+
+    existsSyncSpy = vi.spyOn(fs, 'existsSync').mockReturnValue(true);
+    rmSyncSpy = vi.spyOn(fs, 'rmSync').mockReturnValue(undefined);
+  });
+
+  it('should format /list with sorted 1-based indices, running status, and default star', async () => {
+    const startTime1 = new Date('2026-06-03T12:00:00Z');
+    const startTime2 = new Date('2026-06-03T12:05:00Z');
+
+    mockList.mockReturnValue([
+      { id: 'session-2', startTime: startTime2 },
+      { id: 'session-1', startTime: startTime1 }
+    ]);
+    mockGetDefault.mockReturnValue({ id: 'session-1' });
+
+    const sendTextMessageSpy = vi.spyOn(feishu, 'sendTextMessage').mockResolvedValue(undefined);
+
+    await messageHandler({
+      chatId: 'test-chat-id',
+      senderId: 'user-123',
+      text: '/list',
+      isP2P: false
+    });
+
+    expect(sendTextMessageSpy).toHaveBeenCalled();
+    const message = sendTextMessageSpy.mock.calls[0][1];
+    expect(message).toContain('[1] ⭐ ⚪ `session-1`');
+    expect(message).toContain('[2]   ⚪ `session-2`');
+  });
+
+  it('should switch default session by index or UUID', async () => {
+    const startTime1 = new Date('2026-06-03T12:00:00Z');
+    const startTime2 = new Date('2026-06-03T12:05:00Z');
+
+    mockList.mockReturnValue([
+      { id: 'session-2', startTime: startTime2 },
+      { id: 'session-1', startTime: startTime1 }
+    ]);
+    mockGet.mockImplementation((id) => {
+      if (id === 'session-1') return { id: 'session-1', startTime: startTime1 };
+      if (id === 'session-2') return { id: 'session-2', startTime: startTime2 };
+      return null;
+    });
+    mockSetDefault.mockReturnValue(true);
+
+    const sendTextMessageSpy = vi.spyOn(feishu, 'sendTextMessage').mockResolvedValue(undefined);
+
+    // Switch by index 1 (session-1)
+    await messageHandler({
+      chatId: 'test-chat-id',
+      senderId: 'user-123',
+      text: '/switch 1',
+      isP2P: false
+    });
+    expect(mockSetDefault).toHaveBeenCalledWith('session-1');
+
+    // Switch by index 2 (session-2)
+    await messageHandler({
+      chatId: 'test-chat-id',
+      senderId: 'user-123',
+      text: '/switch 2',
+      isP2P: false
+    });
+    expect(mockSetDefault).toHaveBeenCalledWith('session-2');
+
+    // Switch by UUID
+    await messageHandler({
+      chatId: 'test-chat-id',
+      senderId: 'user-123',
+      text: '/switch session-2',
+      isP2P: false
+    });
+    expect(mockSetDefault).toHaveBeenCalledWith('session-2');
+  });
+
+  it('should stop session by index (SIGTERM kill, keep in registry)', async () => {
+    const mockKill = vi.fn();
+    const mockCp = {
+      stdout: { on: vi.fn() },
+      stderr: { on: vi.fn() },
+      on: vi.fn(),
+      kill: mockKill,
+      errorNotified: false
+    };
+    spawnMock.mockReturnValue(mockCp);
+
+    const sendTextMessageSpy = vi.spyOn(feishu, 'sendTextMessage').mockResolvedValue(undefined);
+
+    // 1. Call /new to trigger spawn and queue process
+    await messageHandler({
+      chatId: 'test-chat-id',
+      senderId: 'user-123',
+      text: '/new prompt X',
+      isP2P: false
+    });
+
+    // 2. Trigger session:new to move to activeProcesses and registry
+    const newSessionListeners = watcher.rawListeners('session:new');
+    newSessionListeners[0]({ sessionId: 'session-to-stop', filePath: '/fake/path' });
+
+    // Mock registry methods
+    const startTime = new Date();
+    mockList.mockReturnValue([
+      { id: 'session-to-stop', startTime }
+    ]);
+    mockGetDefault.mockReturnValue({ id: 'session-to-stop', startTime });
+    mockGet.mockReturnValue({ id: 'session-to-stop', startTime });
+
+    // Call /stop 1
+    await messageHandler({
+      chatId: 'test-chat-id',
+      senderId: 'user-123',
+      text: '/stop 1',
+      isP2P: false
+    });
+
+    expect(mockKill).toHaveBeenCalledWith('SIGTERM');
+    // Ensure it was NOT removed from registry
+    expect(mockRemove).not.toHaveBeenCalled();
+    expect(sendTextMessageSpy).toHaveBeenCalledWith('test-chat-id', expect.stringContaining('Stopped process for session'));
+  });
+
+  it('should delete session by index (SIGTERM kill, delete agy files, remove from registry)', async () => {
+    const mockKill = vi.fn();
+    const mockCp = {
+      stdout: { on: vi.fn() },
+      stderr: { on: vi.fn() },
+      on: vi.fn(),
+      kill: mockKill,
+      errorNotified: false
+    };
+    spawnMock.mockReturnValue(mockCp);
+
+    const sendTextMessageSpy = vi.spyOn(feishu, 'sendTextMessage').mockResolvedValue(undefined);
+
+    // 1. Call /new to trigger spawn and queue process
+    await messageHandler({
+      chatId: 'test-chat-id',
+      senderId: 'user-123',
+      text: '/new prompt Y',
+      isP2P: false
+    });
+
+    // 2. Trigger session:new to move to activeProcesses and registry
+    const newSessionListeners = watcher.rawListeners('session:new');
+    newSessionListeners[0]({ sessionId: 'session-to-del', filePath: '/fake/path' });
+
+    // Mock registry methods
+    const startTime = new Date();
+    mockList.mockReturnValue([
+      { id: 'session-to-del', startTime }
+    ]);
+    mockGetDefault.mockReturnValue({ id: 'session-to-del', startTime });
+    mockGet.mockReturnValue({ id: 'session-to-del', startTime });
+
+    // Spy on watcher.knownSessions
+    const knownSessionsDeleteSpy = vi.spyOn(watcher.knownSessions, 'delete');
+
+    // Call /del 1
+    await messageHandler({
+      chatId: 'test-chat-id',
+      senderId: 'user-123',
+      text: '/del 1',
+      isP2P: false
+    });
+
+    expect(mockKill).toHaveBeenCalledWith('SIGTERM');
+    expect(existsSyncSpy).toHaveBeenCalled();
+    expect(rmSyncSpy).toHaveBeenCalled();
+    expect(knownSessionsDeleteSpy).toHaveBeenCalledWith('session-to-del');
+    expect(mockRemove).toHaveBeenCalledWith('session-to-del');
+    expect(sendTextMessageSpy).toHaveBeenCalledWith('test-chat-id', expect.stringContaining('Deleted session `session-to-del`'));
+  });
+
+  it('should delete all sessions via /del all', async () => {
+    const mockKill = vi.fn();
+    const mockCp = {
+      stdout: { on: vi.fn() },
+      stderr: { on: vi.fn() },
+      on: vi.fn(),
+      kill: mockKill,
+      errorNotified: false
+    };
+    spawnMock.mockReturnValue(mockCp);
+
+    const sendTextMessageSpy = vi.spyOn(feishu, 'sendTextMessage').mockResolvedValue(undefined);
+
+    // Register a session
+    await messageHandler({
+      chatId: 'test-chat-id',
+      senderId: 'user-123',
+      text: '/new prompt Z',
+      isP2P: false
+    });
+    const newSessionListeners = watcher.rawListeners('session:new');
+    newSessionListeners[0]({ sessionId: 'session-z', filePath: '/fake/path' });
+
+    mockList.mockReturnValue([
+      { id: 'session-z', startTime: new Date() }
+    ]);
+
+    // Call /del all
+    await messageHandler({
+      chatId: 'test-chat-id',
+      senderId: 'user-123',
+      text: '/del all',
+      isP2P: false
+    });
+
+    expect(mockKill).toHaveBeenCalledWith('SIGTERM');
+    expect(mockRemove).toHaveBeenCalledWith('session-z');
+    expect(sendTextMessageSpy).toHaveBeenCalledWith('test-chat-id', expect.stringContaining('Deleted all 1 sessions'));
   });
 });
