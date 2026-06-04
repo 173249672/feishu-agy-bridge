@@ -454,6 +454,11 @@ export const messageHandler = async ({ chatId, senderId, text, isP2P }) => {
       }
       const session = resolveSession(arg);
       if (session) {
+        const isActive = activeProcesses.has(session.id);
+        if (!isActive) {
+          await feishu.sendTextMessage(chatId, t('switch_inactive_fail', session.id));
+          return;
+        }
         registry.setDefault(session.id);
         await feishu.sendTextMessage(chatId, t('switch_success', session.id));
       } else {

@@ -381,6 +381,9 @@ describe('Session management index commands', () => {
     });
     mockSetDefault.mockReturnValue(true);
 
+    activeProcesses.set('session-1', { stdin: { write: vi.fn() } });
+    activeProcesses.set('1aee16b2-1336-4464-96aa-279630dd936b', { stdin: { write: vi.fn() } });
+
     const sendTextMessageSpy = vi.spyOn(feishu, 'sendTextMessage').mockResolvedValue(undefined);
 
     // Switch by index 1 (session-1)
@@ -409,6 +412,28 @@ describe('Session management index commands', () => {
       isP2P: false
     });
     expect(mockSetDefault).toHaveBeenCalledWith('1aee16b2-1336-4464-96aa-279630dd936b');
+  });
+
+  it('should fail to switch default session if target session is inactive', async () => {
+    const startTime1 = new Date('2026-06-03T12:00:00Z');
+    mockList.mockReturnValue([
+      { id: 'session-inactive', startTime: startTime1 }
+    ]);
+    mockGet.mockReturnValue({ id: 'session-inactive', startTime: startTime1 });
+    const sendTextMessageSpy = vi.spyOn(feishu, 'sendTextMessage').mockResolvedValue(undefined);
+
+    await messageHandler({
+      chatId: 'test-chat-id',
+      senderId: 'user-123',
+      text: '/switch 1',
+      isP2P: false
+    });
+
+    expect(mockSetDefault).not.toHaveBeenCalled();
+    expect(sendTextMessageSpy).toHaveBeenCalledWith(
+      'test-chat-id',
+      expect.stringContaining('not active')
+    );
   });
 
   it('should stop session by index (SIGTERM kill, keep in registry)', async () => {
