@@ -33,6 +33,23 @@ export class SessionWatcher extends EventEmitter {
       persistent: true,
       ignoreInitial: false,
       depth: 6,
+      ignored: (filePath) => {
+        if (filePath.includes(this.conversationsDir)) {
+          return false;
+        }
+        if (filePath.startsWith(this.brainDir)) {
+          const relative = path.relative(this.brainDir, filePath);
+          if (relative === '' || relative === '.') return false;
+          
+          const parts = relative.split(path.sep);
+          if (parts.length === 1) return false;
+          
+          if (parts[1] !== '.system_generated') {
+            return true;
+          }
+        }
+        return false;
+      }
     });
 
     this.watcher.on('ready', () => {
