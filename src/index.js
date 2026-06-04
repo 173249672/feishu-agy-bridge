@@ -100,33 +100,47 @@ function parsePermissionOptions(stdout) {
   const clean = stdout.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '');
   const lines = clean.split('\n').map(l => l.trim()).filter(Boolean);
   
-  const options = [];
-  let expectedIndex = null;
-  
+  let startLineIdx = -1;
   for (let i = lines.length - 1; i >= 0; i--) {
+    if (lines[i].match(/^(?:>\s*)?1\.\s*(.*)$/)) {
+      startLineIdx = i;
+      break;
+    }
+  }
+  
+  if (startLineIdx === -1) return null;
+  
+  const options = [];
+  let expectedIndex = 1;
+  
+  for (let i = startLineIdx; i < lines.length; i++) {
     const line = lines[i];
-    const match = line.match(/^(?:>\s*)?([1-9])\.\s*(.*)$/);
+    const lowerLine = line.toLowerCase();
+    if (
+      lowerLine.includes('navigate') || 
+      lowerLine.includes('↑/↓') || 
+      lowerLine.includes('enter to select') || 
+      lowerLine.includes('esc to cancel') || 
+      lowerLine.includes('tab amend') || 
+      lowerLine.includes('edit command') ||
+      lowerLine.includes('use arrow keys')
+    ) {
+      continue;
+    }
+    const match = line.match(/^(?:>\s*)?([1-9][0-9]*)\.\s*(.*)$/);
     if (match) {
       const idx = parseInt(match[1], 10);
       const text = match[2].trim();
       
-      if (expectedIndex === null) {
-        expectedIndex = idx;
-        options.unshift({ idx, text });
-        expectedIndex--;
-      } else if (idx === expectedIndex) {
-        options.unshift({ idx, text });
-        expectedIndex--;
-        if (expectedIndex === 0) {
-          break;
-        }
-      } else {
-        break;
+      if (idx === expectedIndex) {
+        options.push({ idx, text });
+        expectedIndex++;
+        continue;
       }
-    } else {
-      if (options.length > 0) {
-        break;
-      }
+    }
+    
+    if (options.length > 0) {
+      options[options.length - 1].text += ' ' + line;
     }
   }
   

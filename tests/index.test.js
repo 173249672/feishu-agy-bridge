@@ -174,6 +174,53 @@ describe('index.js session:permission handler', () => {
 
     registrySpy.mockRestore();
   });
+
+  it('should parse multiline wrapped options and send permission card', async () => {
+    const sessionId = 'test-session-perm-multiline';
+    const chatId = 'test-perm-chat-multiline';
+    const idx = 6;
+    const reason = 'Proposing command: git status';
+
+    const fakeRegistry = { feishuChatId: chatId, status: 'busy', lastPermissionIdx: undefined, lastPermissionKey: undefined, lastMessageId: null };
+    const registryModule = await import('../src/session-registry.js');
+    const registrySpy = vi.spyOn(registryModule.SessionRegistry.prototype, 'get').mockReturnValue(fakeRegistry);
+
+    const mockCp = {
+      stdoutBuffer: `
+Do you want to proceed?
+> 1. Yes
+  2. Yes, and always allow in this conversation for commands that start with
+'git status'
+  3. Yes, and always allow for commands that start with 'git status' (Persist to
+settings.json)
+  4. No
+
+  ↑/↓ Navigate · tab Amend · e edit command
+      `
+    };
+    activeProcesses.set(sessionId, mockCp);
+
+    const buildPermissionCardSpy = vi.spyOn(CardBuilder, 'buildPermissionCard').mockReturnValue({ header: {}, elements: [] });
+    const sendInteractiveCardSpy = vi.spyOn(feishu, 'sendInteractiveCard').mockResolvedValue('msg-multiline');
+
+    const listeners = watcher.rawListeners('session:permission');
+    await listeners[0].call(watcher, { sessionId, idx, reason });
+
+    expect(buildPermissionCardSpy).toHaveBeenCalledWith(
+      sessionId,
+      idx,
+      reason,
+      [
+        { idx: 1, text: 'Yes' },
+        { idx: 2, text: "Yes, and always allow in this conversation for commands that start with 'git status'" },
+        { idx: 3, text: "Yes, and always allow for commands that start with 'git status' (Persist to settings.json)" },
+        { idx: 4, text: 'No' }
+      ]
+    );
+
+    activeProcesses.delete(sessionId);
+    registrySpy.mockRestore();
+  });
 });
 
 describe('index.js session:agy_error handler and /new close fallback', () => {
