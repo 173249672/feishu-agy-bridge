@@ -103,7 +103,7 @@ describe('index.js session:permission handler', () => {
     const reason = 'Reading a test file';
 
     // Register a fake session
-    const fakeRegistry = { feishuChatId: chatId, status: 'busy', lastPermissionIdx: undefined, lastMessageId: null };
+    const fakeRegistry = { feishuChatId: chatId, status: 'busy', lastPermissionIdx: undefined, lastPermissionKey: undefined, lastMessageId: null };
     vi.spyOn(watcher, 'emit').mockReturnValue(true);
 
     const buildPermissionCardSpy = vi.spyOn(CardBuilder, 'buildPermissionCard').mockReturnValue({ header: {}, elements: [] });
@@ -126,17 +126,18 @@ describe('index.js session:permission handler', () => {
     expect(sendInteractiveCardSpy).toHaveBeenCalledWith(chatId, expect.any(Object));
     expect(fakeRegistry.status).toBe('waiting_permission');
     expect(fakeRegistry.lastPermissionIdx).toBe(idx);
+    expect(fakeRegistry.lastPermissionKey).toBe(`${idx}:${reason}`);
 
     registrySpy.mockRestore();
   });
 
-  it('should not send a duplicate permission card for the same idx', async () => {
+  it('should not send a duplicate permission card for the same idx and reason', async () => {
     const sessionId = 'test-session-perm-002';
     const chatId = 'test-perm-chat-002';
     const idx = 10;
     const reason = 'Duplicate test';
 
-    const fakeRegistry = { feishuChatId: chatId, status: 'busy', lastPermissionIdx: idx, lastMessageId: null };
+    const fakeRegistry = { feishuChatId: chatId, status: 'busy', lastPermissionIdx: idx, lastPermissionKey: `${idx}:${reason}`, lastMessageId: null };
     const sendInteractiveCardSpy = vi.spyOn(feishu, 'sendInteractiveCard').mockResolvedValue('msg-002');
 
     const registryModule = await import('../src/session-registry.js');
@@ -145,8 +146,31 @@ describe('index.js session:permission handler', () => {
     const listeners = watcher.rawListeners('session:permission');
     await listeners[0].call(watcher, { sessionId, idx, reason });
 
-    // Should NOT send card because lastPermissionIdx === idx
+    // Should NOT send card because lastPermissionKey matches
     expect(sendInteractiveCardSpy).not.toHaveBeenCalled();
+
+    registrySpy.mockRestore();
+  });
+
+  it('should send a new permission card if the same idx has a different reason', async () => {
+    const sessionId = 'test-session-perm-003';
+    const chatId = 'test-perm-chat-003';
+    const idx = 10;
+    const reason1 = 'Grep command';
+    const reason2 = 'Git commit';
+
+    const fakeRegistry = { feishuChatId: chatId, status: 'busy', lastPermissionIdx: idx, lastPermissionKey: `${idx}:${reason1}`, lastMessageId: null };
+    const sendInteractiveCardSpy = vi.spyOn(feishu, 'sendInteractiveCard').mockResolvedValue('msg-003');
+
+    const registryModule = await import('../src/session-registry.js');
+    const registrySpy = vi.spyOn(registryModule.SessionRegistry.prototype, 'get').mockReturnValue(fakeRegistry);
+
+    const listeners = watcher.rawListeners('session:permission');
+    await listeners[0].call(watcher, { sessionId, idx, reason: reason2 });
+
+    // Should send card because reason is different
+    expect(sendInteractiveCardSpy).toHaveBeenCalled();
+    expect(fakeRegistry.lastPermissionKey).toBe(`${idx}:${reason2}`);
 
     registrySpy.mockRestore();
   });

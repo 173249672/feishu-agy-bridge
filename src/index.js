@@ -100,7 +100,9 @@ watcher.on('session:permission', async ({ sessionId, idx, reason }) => {
   const session = registry.get(sessionId);
   if (!session) return;
 
-  if (session.lastPermissionIdx === idx) return;
+  const permKey = `${idx}:${reason}`;
+  if (session.lastPermissionKey === permKey) return;
+  session.lastPermissionKey = permKey;
   session.lastPermissionIdx = idx;
 
   session.status = 'waiting_permission';
