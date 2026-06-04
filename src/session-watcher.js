@@ -19,6 +19,7 @@ export class SessionWatcher extends EventEmitter {
     this.fileOffsets = new Map();
     this.knownSessions = new Set();
     this.isReady = false;
+    this.dbDebounceTimers = new Map();
   }
 
   registerNewSession(sessionId, filePath) {
@@ -67,7 +68,7 @@ export class SessionWatcher extends EventEmitter {
         this.registerNewSession(sessionId, transcriptPath);
         const dbPath = path.join(this.conversationsDir, `${sessionId}.db`);
         if (this.isReady) {
-          this.checkDatabaseForQuestion(dbPath, sessionId);
+          this.debounceDbCheck(sessionId, dbPath);
         }
       }
     });
@@ -83,7 +84,7 @@ export class SessionWatcher extends EventEmitter {
         const transcriptPath = path.join(this.brainDir, sessionId, '.system_generated', 'logs', 'transcript.jsonl');
         this.registerNewSession(sessionId, transcriptPath);
         const dbPath = path.join(this.conversationsDir, `${sessionId}.db`);
-        this.checkDatabaseForQuestion(dbPath, sessionId);
+        this.debounceDbCheck(sessionId, dbPath);
       }
     });
   }
@@ -167,9 +168,24 @@ export class SessionWatcher extends EventEmitter {
     }
   }
 
+  debounceDbCheck(sessionId, dbPath) {
+    if (this.dbDebounceTimers.has(sessionId)) {
+      clearTimeout(this.dbDebounceTimers.get(sessionId));
+    }
+    const timer = setTimeout(() => {
+      this.dbDebounceTimers.delete(sessionId);
+      this.checkDatabaseForQuestion(dbPath, sessionId);
+    }, 100); // 100ms debounce
+    this.dbDebounceTimers.set(sessionId, timer);
+  }
+
   stop() {
     if (this.watcher) {
       this.watcher.close();
     }
+    for (const timer of this.dbDebounceTimers.values()) {
+      clearTimeout(timer);
+    }
+    this.dbDebounceTimers.clear();
   }
 }

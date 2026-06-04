@@ -192,6 +192,16 @@ watcher.on('session:permission', async ({ sessionId, idx, reason }) => {
   const cp = activeProcesses.get(sessionId);
   if (cp && cp.stdoutBuffer) {
     options = parsePermissionOptions(cp.stdoutBuffer);
+    if (!options) {
+      for (let attempt = 1; attempt <= 5; attempt++) {
+        await new Promise(resolve => setTimeout(resolve, 100));
+        options = parsePermissionOptions(cp.stdoutBuffer);
+        if (options) {
+          console.log(`[Watcher][${sessionId}] Parsed permission options on attempt #${attempt}`);
+          break;
+        }
+      }
+    }
   }
 
   const card = CardBuilder.buildPermissionCard(sessionId, idx, reason, options, session.parentId);
