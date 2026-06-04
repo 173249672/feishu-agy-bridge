@@ -7,7 +7,7 @@
 - **Real-time Status Monitoring**: Tails agy session `transcript.jsonl` logs in real-time via incremental file reads.
 - **Dual-path Event Detection**: Watches both transcript JSONL logs and SQLite conversation databases (`conversations/*.db`) to detect questions, permission requests, and errors reliably.
 - **Interactive Event Cards**: Automatically sends formatted interactive cards to Feishu for key events (tool permission requests, execution errors, step completions, multi-choice questions).
-- **Two-way Communication**: Interacts with active agy sessions. Approving or rejecting a tool permission from Feishu card buttons writes the response to agy's stdin and injects a message into the local IPC message folder.
+- **Two-way Communication**: Interacts with active agy sessions. Approving or rejecting a tool permission from Feishu card buttons writes the response to agy's stdin. For multi-choice permissions, it dynamically parses options from stdout and simulates PTY arrow-key navigation when clicked.
 - **Model Switching**: Switches models on the fly using `/model <model-alias>`. With no argument, returns the current model and a list of all available aliases.
 - **Multi-session & Index Management**: Watches and manages multiple parallel agy sessions simultaneously. Supports index-based shortcut commands for quicker interaction.
 - **Dynamic Localization (i18n)**: Fully localized interfaces in both English and Chinese. The bot adapts to user settings dynamically.
@@ -135,7 +135,7 @@ The bridge automatically sends interactive cards to Feishu for the following eve
 
 | Event | Card Color | Description |
 |:---|:---|:---|
-| Permission Request | 🟡 Yellow | agy requests tool execution approval; includes ✅ / ❌ buttons |
+| Permission Request | 🟡 Yellow | agy requests tool execution approval; includes ✅ / ❌ buttons, or dynamic choice buttons for multi-choice permissions |
 | Error | 🔴 Red | An error occurred in the agy step |
 | Completed / Waiting | 🟢 Green | agy finished a turn and is waiting for input |
 | Session Ended | ⚫ Grey | The agy process exited |
