@@ -10,6 +10,8 @@ import fs from 'fs';
 import path from 'path';
 import { t } from './i18n.js';
 import { settingsManager } from './settings-manager.js';
+import http from 'http';
+import os from 'os';
 
 const registry = new SessionRegistry();
 export const injector = new AGYInjector(config.agy.brainDir, config.agy.settingsPath);
@@ -757,12 +759,71 @@ export const actionHandler = async (params) => {
   };
 };
 
+function startFileServer(port = process.env.FILE_SERVER_PORT || '8080') {
+  const server = http.createServer((req, res) => {
+    let filePath;
+    try {
+      filePath = decodeURIComponent(req.url);
+    } catch (e) {
+      res.statusCode = 400;
+      res.end('400 Bad Request');
+      return;
+    }
+    
+    filePath = path.resolve(filePath);
+
+    const homeDir = os.homedir();
+    if (!filePath.startsWith(homeDir)) {
+      res.statusCode = 403;
+      res.end('403 Forbidden: Access outside home directory is not allowed.');
+      return;
+    }
+
+    fs.stat(filePath, (err, stats) => {
+      if (err || !stats.isFile()) {
+        res.statusCode = 404;
+        res.end('404 Not Found');
+        return;
+      }
+
+      if (filePath.endsWith('.md')) {
+        res.setHeader('Content-Type', 'text/markdown; charset=utf-8');
+      } else if (filePath.endsWith('.html')) {
+        res.setHeader('Content-Type', 'text/html; charset=utf-8');
+      } else if (filePath.endsWith('.json')) {
+        res.setHeader('Content-Type', 'application/json; charset=utf-8');
+      } else if (filePath.endsWith('.js') || filePath.endsWith('.mjs')) {
+        res.setHeader('Content-Type', 'application/javascript; charset=utf-8');
+      } else {
+        res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+      }
+
+      const stream = fs.createReadStream(filePath);
+      stream.on('error', () => {
+        if (!res.headersSent) {
+          res.statusCode = 500;
+          res.end('500 Internal Server Error');
+        }
+      });
+      stream.pipe(res);
+    });
+  });
+
+  server.listen(port, () => {
+    const ip = getLocalIp();
+    console.log(`[File Server] Local file server started on port ${port}. Preview root: http://${ip}:${port}/`);
+  });
+
+  return server;
+}
+
 async function main() {
   console.log('Starting Feishu-AGY Bridge...');
   watcher.start();
   await feishu.start(messageHandler, actionHandler);
   const ip = getLocalIp();
   console.log(`Feishu-AGY Bridge is running. Local IP: ${ip}`);
+  startFileServer();
 }
 
 if (!process.env.VITEST) {
