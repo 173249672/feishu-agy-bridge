@@ -158,7 +158,7 @@ export function buildQuestionCard(sessionId, stepIndex, questionData, parentId =
   const buttons = options.map((opt, idx) => {
     return {
       tag: 'button',
-      text: { tag: 'plain_text', content: opt.length > 50 ? opt.slice(0, 47) + '...' : opt },
+      text: { tag: 'plain_text', content: opt },
       type: idx === 0 ? 'primary' : 'default',
       value: { 
         action: 'answer', 
