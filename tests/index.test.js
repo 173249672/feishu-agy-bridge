@@ -122,7 +122,7 @@ describe('index.js session:permission handler', () => {
     // Invoke the handler
     await listeners[0].call(watcher, { sessionId, idx, reason });
 
-    expect(buildPermissionCardSpy).toHaveBeenCalledWith(sessionId, idx, reason);
+    expect(buildPermissionCardSpy).toHaveBeenCalledWith(sessionId, idx, reason, null);
     expect(sendInteractiveCardSpy).toHaveBeenCalledWith(chatId, expect.any(Object));
     expect(fakeRegistry.status).toBe('waiting_permission');
     expect(fakeRegistry.lastPermissionIdx).toBe(idx);
@@ -552,5 +552,32 @@ describe('Session management index commands', () => {
     expect(res.toast.content).toBe('Settings updated');
     expect(res.card.type).toBe('raw');
     expect(res.card.data.header.title.content).toContain('Settings');
+  });
+
+  it('should handle approve_option action in actionHandler', async () => {
+    const mockWrite = vi.fn();
+    const mockCp = {
+      stdin: {
+        writable: true,
+        write: mockWrite
+      }
+    };
+    activeProcesses.set('test-session-123', mockCp);
+
+    const injectMessageSpy = vi.spyOn(injector, 'injectMessage').mockReturnValue('msg-uuid');
+
+    const res = await actionHandler({
+      actionType: 'approve_option',
+      sessionId: 'test-session-123',
+      stepIndex: 5,
+      optionIndex: 1,
+      text: 'Yes, and always allow non-workspace access'
+    });
+
+    expect(injectMessageSpy).toHaveBeenCalledWith('test-session-123', 'Yes, and always allow non-workspace access');
+    expect(mockWrite).toHaveBeenCalledWith('\x1b[B\r');
+    expect(res.toast.content).toBe('Select 2');
+    expect(res.card.data.header.title.content).toBe('✅ AGY Action Confirmed');
+    expect(res.card.data.elements[0].text.content).toContain('2️⃣ Yes, and always allow non-workspace access');
   });
 });

@@ -10,40 +10,72 @@ function getCardConfig(defaultColor) {
   };
 }
 
-export function buildPermissionCard(sessionId, stepIndex, reason) {
+export function buildPermissionCard(sessionId, stepIndex, reason, options = null) {
   const cfg = getCardConfig('yellow');
+  
+  const cardElements = [
+    {
+      tag: 'div',
+      text: {
+        tag: 'lark_md',
+        content: `**${t('card_session_id')}**: \`${sessionId}\`\n**${t('card_step')}**: #${stepIndex}\n\n**${t('card_reason')}**:\n${reason}`
+      }
+    }
+  ];
+
+  if (options && options.length > 0) {
+    const optionsMarkdown = options.map((opt, idx) => {
+      return `${idx + 1}️⃣ ${opt.text}`;
+    }).join('\n\n');
+
+    cardElements[0].text.content += `\n\n**${t('card_options')}**:\n${optionsMarkdown}`;
+
+    const buttons = options.map((opt, idx) => {
+      return {
+        tag: 'button',
+        text: { tag: 'plain_text', content: `${t('card_question_btn_prefix')}${idx + 1}` },
+        type: 'primary',
+        value: {
+          action: 'approve_option',
+          sessionId,
+          stepIndex,
+          optionIndex: idx,
+          text: opt.text
+        }
+      };
+    });
+
+    cardElements.push({
+      tag: 'action',
+      actions: buttons
+    });
+  } else {
+    cardElements.push({
+      tag: 'action',
+      actions: [
+        {
+          tag: 'button',
+          text: { tag: 'plain_text', content: `✅ ${t('card_permission_confirm')}` },
+          type: 'primary',
+          value: { action: 'approve', sessionId, stepIndex }
+        },
+        {
+          tag: 'button',
+          text: { tag: 'plain_text', content: `❌ ${t('card_permission_cancel')}` },
+          type: 'danger',
+          value: { action: 'reject', sessionId, stepIndex }
+        }
+      ]
+    });
+  }
+
   return {
     config: { wide_screen_mode: cfg.wideScreen },
     header: {
       template: cfg.template,
       title: { tag: 'plain_text', content: t('card_permission_title') }
     },
-    elements: [
-      {
-        tag: 'div',
-        text: {
-          tag: 'lark_md',
-          content: `**${t('card_session_id')}**: \`${sessionId}\`\n**${t('card_step')}**: #${stepIndex}\n\n**${t('card_reason')}**:\n${reason}`
-        }
-      },
-      {
-        tag: 'action',
-        actions: [
-          {
-            tag: 'button',
-            text: { tag: 'plain_text', content: `✅ ${t('card_permission_confirm')}` },
-            type: 'primary',
-            value: { action: 'approve', sessionId, stepIndex }
-          },
-          {
-            tag: 'button',
-            text: { tag: 'plain_text', content: `❌ ${t('card_permission_cancel')}` },
-            type: 'danger',
-            value: { action: 'reject', sessionId, stepIndex }
-          }
-        ]
-      }
-    ]
+    elements: cardElements
   };
 }
 

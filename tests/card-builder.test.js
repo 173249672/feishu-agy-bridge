@@ -55,4 +55,19 @@ describe('CardBuilder', () => {
     card = CardBuilder.buildSettingsCard();
     expect(card.config.wide_screen_mode).toBe(false);
   });
+
+  it('should build correct permission card with options', () => {
+    const options = [
+      { idx: 1, text: 'Yes, allow access' },
+      { idx: 2, text: 'Yes, and always allow non-workspace access' },
+      { idx: 3, text: 'No, deny access' }
+    ];
+    const card = CardBuilder.buildPermissionCard('sess1', 5, 'Require git write', options);
+    expect(card.header.template).toBe('yellow');
+    expect(card.elements[0].text.content).toContain('Yes, and always allow non-workspace access');
+    expect(card.elements[1].actions[0].value.action).toBe('approve_option');
+    expect(card.elements[1].actions[0].value.optionIndex).toBe(0);
+    expect(card.elements[1].actions[1].value.optionIndex).toBe(1);
+    expect(card.elements[1].actions[2].value.optionIndex).toBe(2);
+  });
 });

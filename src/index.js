@@ -95,6 +95,44 @@ watcher.on('session:question', async ({ sessionId, idx, questionData }) => {
   session.lastMessageId = msgId;
 });
 
+function parsePermissionOptions(stdout) {
+  if (!stdout) return null;
+  const clean = stdout.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '');
+  const lines = clean.split('\n').map(l => l.trim()).filter(Boolean);
+  
+  const options = [];
+  let expectedIndex = null;
+  
+  for (let i = lines.length - 1; i >= 0; i--) {
+    const line = lines[i];
+    const match = line.match(/^(?:>\s*)?([1-9])\.\s*(.*)$/);
+    if (match) {
+      const idx = parseInt(match[1], 10);
+      const text = match[2].trim();
+      
+      if (expectedIndex === null) {
+        expectedIndex = idx;
+        options.unshift({ idx, text });
+        expectedIndex--;
+      } else if (idx === expectedIndex) {
+        options.unshift({ idx, text });
+        expectedIndex--;
+        if (expectedIndex === 0) {
+          break;
+        }
+      } else {
+        break;
+      }
+    } else {
+      if (options.length > 0) {
+        break;
+      }
+    }
+  }
+  
+  return options.length > 0 ? options : null;
+}
+
 watcher.on('session:permission', async ({ sessionId, idx, reason }) => {
   console.log(`[Watcher][${sessionId}] Permission required at step #${idx}: ${reason}`);
   const session = registry.get(sessionId);
@@ -106,7 +144,14 @@ watcher.on('session:permission', async ({ sessionId, idx, reason }) => {
   session.lastPermissionIdx = idx;
 
   session.status = 'waiting_permission';
-  const card = CardBuilder.buildPermissionCard(sessionId, idx, reason);
+
+  let options = null;
+  const cp = activeProcesses.get(sessionId);
+  if (cp && cp.stdoutBuffer) {
+    options = parsePermissionOptions(cp.stdoutBuffer);
+  }
+
+  const card = CardBuilder.buildPermissionCard(sessionId, idx, reason, options);
   const msgId = await feishu.sendInteractiveCard(session.feishuChatId, card);
   session.lastMessageId = msgId;
 });
@@ -232,9 +277,9 @@ export const messageHandler = async ({ chatId, senderId, text, isP2P }) => {
         env: cleanEnv
       });
 
+      cp.stdoutBuffer = '';
       const startTime = Date.now();
       let stderrBuffer = '';
-      let stdoutBuffer = '';
       spawnedQueue.push({ cp, chatId, timestamp: startTime });
 
       cp.errorNotified = false;
@@ -252,7 +297,7 @@ export const messageHandler = async ({ chatId, senderId, text, isP2P }) => {
       cp.stdout.on('data', (data) => {
         const text = data.toString();
         console.log(`[AGY Out]: ${text}`);
-        stdoutBuffer += text;
+        cp.stdoutBuffer += text;
       });
 
       cp.stderr.on('data', (data) => {
@@ -275,7 +320,7 @@ export const messageHandler = async ({ chatId, senderId, text, isP2P }) => {
 
         // Fallback: if closed with error and we haven't already notified
         if (code !== 0 && !cp.errorNotified) {
-          await notifyError(stdoutBuffer + stderrBuffer || `AGY exited with code ${code}`);
+          await notifyError(cp.stdoutBuffer + stderrBuffer || `AGY exited with code ${code}`);
         }
       });
       return;
@@ -491,6 +536,46 @@ export const actionHandler = async (params) => {
           text: {
             tag: 'lark_md',
             content: `**${t('card_session_id')}**: \`${sessionId}\`\n**${t('card_step')}**: #${stepIndex}\n\n**${t('card_your_choice')}**: \n${optionIndex + 1}️⃣ ${text}`
+          }
+        }
+      ]
+    };
+
+    return {
+      toast: {
+        type: 'success',
+        content: `${t('card_question_btn_prefix')}${optionIndex + 1}`
+      },
+      card: {
+        type: 'raw',
+        data: updatedCard
+      }
+    };
+  }
+
+  if (actionType === 'approve_option') {
+    const { optionIndex, text } = params;
+    console.log(`[Feishu Action] Permission Option selected: idx=${optionIndex}, text=${text}`);
+
+    injector.injectMessage(sessionId, text);
+
+    const cp = activeProcesses.get(sessionId);
+    if (cp && cp.stdin.writable) {
+      cp.stdin.write('\x1b[B'.repeat(optionIndex) + '\r');
+    }
+
+    const updatedCard = {
+      config: { wide_screen_mode: settingsManager.get('wideScreen') !== false },
+      header: {
+        template: 'green',
+        title: { tag: 'plain_text', content: t('card_permission_approved') }
+      },
+      elements: [
+        {
+          tag: 'div',
+          text: {
+            tag: 'lark_md',
+            content: `**${t('card_session_id')}**: \`${sessionId}\`\n**${t('card_step')}**: #${stepIndex}\n\n**${t('card_result')}**: ${t('card_permission_handled_suffix')}\n**${t('card_your_choice')}**: \n${optionIndex + 1}️⃣ ${text}`
           }
         }
       ]
