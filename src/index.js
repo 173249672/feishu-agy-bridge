@@ -246,6 +246,9 @@ export const messageHandler = async ({ chatId, senderId, text, isP2P }) => {
       // Clean environment to avoid agent-specific variables causing conflicts
       const cleanEnv = { ...process.env, FORCE_COLOR: '1' };
       for (const key of Object.keys(cleanEnv)) {
+        if (key === 'ANTIGRAVITY_LS_ADDRESS' || key === 'ANTIGRAVITY_CSRF_TOKEN' || key === 'ANTIGRAVITY_PROJECT_ID') {
+          continue;
+        }
         if (key.startsWith('ANTIGRAVITY_') || key.startsWith('CHROME_') || key.startsWith('AGY_BROWSER_')) {
           delete cleanEnv[key];
         }
