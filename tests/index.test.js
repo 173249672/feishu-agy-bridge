@@ -493,6 +493,30 @@ describe('Session management index commands', () => {
     expect(card.header.title.content).toContain('Settings');
   });
 
+  it('should display help text on /help command and respect language settings', async () => {
+    const sendTextMessageSpy = vi.spyOn(feishu, 'sendTextMessage').mockResolvedValue(undefined);
+
+    // Test with English language setting
+    settingsManager.set('language', 'en');
+    await messageHandler({
+      chatId: 'test-chat-id',
+      senderId: 'user-123',
+      text: '/help',
+      isP2P: false
+    });
+    expect(sendTextMessageSpy).toHaveBeenCalledWith('test-chat-id', expect.stringContaining('Help Center - Command Guide'));
+
+    // Test with Chinese language setting
+    settingsManager.set('language', 'zh');
+    await messageHandler({
+      chatId: 'test-chat-id',
+      senderId: 'user-123',
+      text: '/help',
+      isP2P: false
+    });
+    expect(sendTextMessageSpy).toHaveBeenLastCalledWith('test-chat-id', expect.stringContaining('帮助中心 - 指令使用指南'));
+  });
+
   it('should handle settings actions in actionHandler and return updated card synchronously', async () => {
     const res = await actionHandler({
       actionType: 'set_lang',

@@ -387,6 +387,11 @@ export const messageHandler = async ({ chatId, senderId, text, isP2P }) => {
       return;
     }
 
+    if (command === '/help') {
+      await feishu.sendTextMessage(chatId, t('help_content'));
+      return;
+    }
+
     await feishu.sendTextMessage(chatId, t('unknown_command', command));
     return;
   }
