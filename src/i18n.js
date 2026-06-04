@@ -13,6 +13,10 @@ const translations = {
     switch_success: (id) => `✅ 已切换默认会话为 \`${id}\``,
     switch_fail: (arg) => `❌ 未找到会话 \`${arg}\`。`,
     switch_inactive_fail: (id) => `❌ 会话 \`${id}\` 已结束或未活动（没有正在运行的进程），无法切换。\n请使用 \`/new <提示词>\` 启动新任务。`,
+    resume_usage: '❌ 使用方法：`/resume <序号或会话ID>`',
+    resume_start: (id) => `▶️ 正在恢复并激活会话 \`${id}\`...`,
+    resume_fail: (id, err) => `❌ 会话 \`${id}\` 恢复失败\n\n${err}`,
+    resume_already_active: (id) => `⚠️ 会话 \`${id}\` 已经是活跃状态，且已设为当前默认会话。`,
     stop_success: (id) => `⏹️ 已停止会话 \`${id}\` 的进程`,
     stop_already: (id) => `⚠️ 会话 \`${id}\` 已经处于停止状态。`,
     stop_no_default: '没有活动的默认会话。',
@@ -27,7 +31,7 @@ const translations = {
     no_active_session: '❌ 当前没有活动的会话。请发送 `/new <提示词>` 开始一个新会话。',
     session_not_active: (id) => `❌ 当前默认会话 \`${id}\` 不活动。请使用 \`/switch <序号/ID>\` 或发送 \`/new <提示词>\` 启动新会话。`,
     bot_busy: '⏳ 机器人当前正忙于执行任务，请等待本轮任务完成后再输入。您也可以发送 \`/stop\` 中断当前任务。',
-    help_content: `📖 帮助中心 - 指令使用指南\n\n🚀 **/new <提示词>**\n开始一个新会话。提示词为你需要机器人协作完成的任务。例如：\`/new 帮我写一个备份脚本\`\n\n📋 **/list**\n列出本地所有会话，显示运行状态（🟢 运行中，⚪ 已停止）和默认会话（⭐ 标识）。\n\n🔄 **/switch <序号/会话ID>**\n将目标会话切换为当前默认会话。之后的消息都将转发到该会话。\n\n🤖 **/model [模型名称]**\n无参数时列出可用模型及别名；带参数时切换当前模型。例如：\`/model flash\`\n\n⏹️ **/stop [序号/会话ID]**\n停止目标会话的运行进程（默认停止当前会话）。\n\n🗑️ **/del <序号/会话ID/all>**\n删除目标会话及其本地文件；\`/del all\` 可清空所有会话。\n\n⚙️ **/settings**\n打开设置菜单卡片，调整语言、主题模板及宽屏模式配置。\n\nℹ️ **/help**\n显示本帮助手册。`,
+    help_content: `📖 帮助中心 - 指令使用指南\n\n🚀 **/new <提示词>**\n开始一个新会话。提示词为你需要机器人协作完成的任务。例如：\`/new 帮我写一个备份脚本\`\n\n📋 **/list**\n列出本地所有会话，显示运行状态（🟢 运行中，⚪ 已停止）和默认会话（⭐ 标识）。\n\n🔄 **/switch <序号/会话ID>**\n将目标会话切换为当前默认会话。之后的消息都将转发到该会话。\n\n▶️ **/resume <序号/会话ID>**\n恢复并继续一个已停止/不活跃的会话进程，并设为默认会话。\n\n🤖 **/model [模型名称]**\n无参数时列出可用模型及别名；带参数时切换当前模型。例如：\`/model flash\`\n\n⏹️ **/stop [序号/会话ID]**\n停止目标会话的运行进程（默认停止当前会话）。\n\n🗑️ **/del <序号/会话ID/all>**\n删除目标会话及其本地文件；\`/del all\` 可清空所有会话。\n\n⚙️ **/settings**\n打开设置菜单卡片，调整语言、主题模板及宽屏模式配置。\n\nℹ️ **/help**\n显示本帮助手册。`,
 
     // Card UI Labels
     card_session_id: '会话 ID',
@@ -77,6 +81,10 @@ const translations = {
     switch_success: (id) => `✅ Switched default session to \`${id}\``,
     switch_fail: (arg) => `❌ Session \`${arg}\` not found.`,
     switch_inactive_fail: (id) => `❌ Session \`${id}\` is not active (no running process) and cannot be switched to.\nPlease start a new task with \`/new <prompt>\`.`,
+    resume_usage: '❌ Usage: `/resume <index or session-id>`',
+    resume_start: (id) => `▶️ Resuming and activating session \`${id}\`...`,
+    resume_fail: (id, err) => `❌ Session \`${id}\` failed to resume\n\n${err}`,
+    resume_already_active: (id) => `⚠️ Session \`${id}\` is already active and set as the default session.`,
     stop_success: (id) => `⏹️ Stopped process for session \`${id}\``,
     stop_already: (id) => `⚠️ Session \`${id}\` is already stopped.`,
     stop_no_default: 'No active default session.',
@@ -91,7 +99,7 @@ const translations = {
     no_active_session: '❌ No active session to reply to. Use `/new <prompt>` to start one.',
     session_not_active: (id) => `❌ The current default session \`${id}\` is not active (no running process). Use \`/switch <index/id>\` or start a new one with \`/new <prompt>\`.`,
     bot_busy: '⏳ Bot is currently busy executing tasks. Please wait until this round completes. You can also send \`/stop\` to interrupt.',
-    help_content: `📖 Help Center - Command Guide\n\n🚀 **/new <prompt>**\nStart a new session with the task description you want the bot to work on. Example: \`/new write a backup script\`\n\n📋 **/list**\nList all local sessions, showing their status (🟢 running, ⚪ stopped) and default session (marked with ⭐).\n\n🔄 **/switch <index/session-id>**\nSwitch the default active session to the target session. Subsequent inputs will be forwarded there.\n\n🤖 **/model [model-name]**\nWithout arguments, lists all available models; with argument, switches the active model. Example: \`/model flash\`\n\n⏹️ **/stop [index/session-id]**\nStop the active process of the target session (defaults to default session).\n\n🗑️ **/del <index/session-id/all>**\nDelete the target session and its files from disk; \`/del all\` deletes all sessions.\n\n⚙️ **/settings**\nDisplay the settings card to configure language, theme, and widescreen mode.\n\nℹ️ **/help**\nShow this help manual.`,
+    help_content: `📖 Help Center - Command Guide\n\n🚀 **/new <prompt>**\nStart a new session with the task description you want the bot to work on. Example: \`/new write a backup script\`\n\n📋 **/list**\nList all local sessions, showing their status (🟢 running, ⚪ stopped) and default session (marked with ⭐).\n\n🔄 **/switch <index/session-id>**\nSwitch the default active session to the target session. Subsequent inputs will be forwarded there.\n\n▶️ **/resume <index/session-id>**\nResume and continue a stopped/inactive session process, and set it as the default session.\n\n🤖 **/model [model-name]**\nWithout arguments, lists all available models; with argument, switches the active model. Example: \`/model flash\`\n\n⏹️ **/stop [index/session-id]**\nStop the active process of the target session (defaults to default session).\n\n🗑️ **/del <index/session-id/all>**\nDelete the target session and its files from disk; \`/del all\` deletes all sessions.\n\n⚙️ **/settings**\nDisplay the settings card to configure language, theme, and widescreen mode.\n\nℹ️ **/help**\nShow this help manual.`,
 
     // Card UI Labels
     card_session_id: 'Session ID',

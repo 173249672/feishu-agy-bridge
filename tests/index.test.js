@@ -614,6 +614,92 @@ describe('Session management index commands', () => {
     expect(sendTextMessageSpy).toHaveBeenLastCalledWith('test-chat-id', expect.stringContaining('帮助中心 - 指令使用指南'));
   });
 
+  it('should fail to resume if no index or ID is specified', async () => {
+    const sendTextMessageSpy = vi.spyOn(feishu, 'sendTextMessage').mockResolvedValue(undefined);
+    await messageHandler({
+      chatId: 'test-chat-id',
+      senderId: 'user-123',
+      text: '/resume',
+      isP2P: false
+    });
+    expect(sendTextMessageSpy).toHaveBeenCalledWith('test-chat-id', expect.stringContaining('resume <index or session-id>'));
+  });
+
+  it('should fail to resume if the session does not exist', async () => {
+    const sendTextMessageSpy = vi.spyOn(feishu, 'sendTextMessage').mockResolvedValue(undefined);
+    mockList.mockReturnValue([]);
+    mockGet.mockReturnValue(null);
+
+    await messageHandler({
+      chatId: 'test-chat-id',
+      senderId: 'user-123',
+      text: '/resume non-existent',
+      isP2P: false
+    });
+    expect(sendTextMessageSpy).toHaveBeenCalledWith('test-chat-id', expect.stringContaining('Session `non-existent` not found'));
+  });
+
+  it('should set default and notify if the session is already active', async () => {
+    const startTime1 = new Date('2026-06-03T12:00:00Z');
+    mockList.mockReturnValue([
+      { id: 'session-active', startTime: startTime1 }
+    ]);
+    mockGet.mockReturnValue({ id: 'session-active', startTime: startTime1 });
+    
+    // Set it active in activeProcesses
+    activeProcesses.set('session-active', { stdin: { write: vi.fn() } });
+
+    const sendTextMessageSpy = vi.spyOn(feishu, 'sendTextMessage').mockResolvedValue(undefined);
+
+    await messageHandler({
+      chatId: 'test-chat-id',
+      senderId: 'user-123',
+      text: '/resume 1',
+      isP2P: false
+    });
+
+    expect(mockSetDefault).toHaveBeenCalledWith('session-active');
+    expect(sendTextMessageSpy).toHaveBeenCalledWith(
+      'test-chat-id',
+      expect.stringContaining('is already active')
+    );
+  });
+
+  it('should spawn agy with --conversation and add to activeProcesses when resuming inactive session', async () => {
+    const startTime1 = new Date('2026-06-03T12:00:00Z');
+    const mockSession = { id: 'session-inactive', startTime: startTime1 };
+    mockList.mockReturnValue([mockSession]);
+    mockGet.mockReturnValue(mockSession);
+
+    const mockCp = {
+      stdout: { on: vi.fn() },
+      stderr: { on: vi.fn() },
+      on: vi.fn(),
+      errorNotified: false
+    };
+    spawnMock.mockReturnValue(mockCp);
+
+    const sendTextMessageSpy = vi.spyOn(feishu, 'sendTextMessage').mockResolvedValue(undefined);
+
+    await messageHandler({
+      chatId: 'test-chat-id',
+      senderId: 'user-123',
+      text: '/resume 1',
+      isP2P: false
+    });
+
+    expect(mockSetDefault).toHaveBeenCalledWith('session-inactive');
+    expect(sendTextMessageSpy).toHaveBeenCalledWith(
+      'test-chat-id',
+      expect.stringContaining('Resuming and activating')
+    );
+    expect(spawnMock).toHaveBeenCalled();
+    const args = spawnMock.mock.calls[0][1];
+    expect(args).toContain('--conversation');
+    expect(args).toContain('session-inactive');
+    expect(activeProcesses.get('session-inactive')).toBe(mockCp);
+  });
+
   it('should handle settings actions in actionHandler and return updated card synchronously', async () => {
     const res = await actionHandler({
       actionType: 'set_lang',

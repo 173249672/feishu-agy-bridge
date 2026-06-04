@@ -466,6 +466,140 @@ export const messageHandler = async ({ chatId, senderId, text, isP2P }) => {
       return;
     }
 
+    if (command === '/resume') {
+      if (!arg) {
+        await feishu.sendTextMessage(chatId, t('resume_usage'));
+        return;
+      }
+      const session = resolveSession(arg);
+      if (!session) {
+        await feishu.sendTextMessage(chatId, t('switch_fail', arg));
+        return;
+      }
+
+      const isActive = activeProcesses.has(session.id);
+      if (isActive) {
+        registry.setDefault(session.id);
+        session.feishuChatId = chatId;
+        await feishu.sendTextMessage(chatId, t('resume_already_active', session.id));
+        return;
+      }
+
+      registry.setDefault(session.id);
+      session.feishuChatId = chatId;
+
+      await feishu.sendTextMessage(chatId, t('resume_start', session.id));
+
+      // Clean environment to avoid agent-specific variables causing conflicts
+      const cleanEnv = { ...process.env, FORCE_COLOR: '1' };
+      for (const key of Object.keys(cleanEnv)) {
+        if (key === 'ANTIGRAVITY_LS_ADDRESS' || key === 'ANTIGRAVITY_CSRF_TOKEN' || key === 'ANTIGRAVITY_PROJECT_ID') {
+          continue;
+        }
+        if (key.startsWith('ANTIGRAVITY_') || key.startsWith('CHROME_') || key.startsWith('AGY_BROWSER_')) {
+          delete cleanEnv[key];
+        }
+      }
+
+      const isMac = process.platform === 'darwin';
+      const cmd = isMac ? 'python3' : 'agy';
+      const spawnArgs = isMac 
+        ? [
+            '-c',
+            'import pty, os, sys, fcntl, termios, struct;\n' +
+            'pid, fd = pty.fork()\n' +
+            'if pid == 0:\n' +
+            '    try: fcntl.ioctl(1, termios.TIOCSWINSZ, struct.pack("HHHH", 24, 80, 0, 0))\n' +
+            '    except: pass\n' +
+            '    os.execlp(sys.argv[1], *sys.argv[1:])\n' +
+            'else:\n' +
+            '    try: pty._copy(fd)\n' +
+            '    except: pass',
+            'agy', '--conversation', session.id
+          ]
+        : ['--conversation', session.id];
+
+      const cp = spawn(cmd, spawnArgs, {
+        env: cleanEnv
+      });
+
+      cp.stdoutBuffer = '';
+      const startTime = Date.now();
+      let stderrBuffer = '';
+      activeProcesses.set(session.id, cp);
+
+      cp.errorNotified = false;
+      const notifyError = async (rawMessage) => {
+        if (cp.errorNotified) return;
+        cp.errorNotified = true;
+        const clean = rawMessage.replace(/\x1b\[[^m]*m|[\x00-\x08\x0e-\x1f\x7f]/g, '').trim();
+        const quotaMatch = clean.match(/Individual quota reached[^.\n]*/);
+        const resourceMatch = clean.match(/RESOURCE_EXHAUSTED[^\n]*/i);
+        const shortError = quotaMatch?.[0] || resourceMatch?.[0] || clean.split('\n').find(l => l.trim()) || clean;
+
+        await feishu.sendTextMessage(chatId, t('resume_fail', session.id, shortError.slice(0, 300)));
+      };
+
+      let stdoutLogBuffer = '';
+      let stderrLogBuffer = '';
+
+      cp.stdout.on('data', (data) => {
+        const text = data.toString();
+        cp.stdoutBuffer += text;
+
+        stdoutLogBuffer += text;
+        let lines = stdoutLogBuffer.split(/\r?\n/);
+        stdoutLogBuffer = lines.pop() || '';
+
+        for (const line of lines) {
+          const clean = cleanAndFilterLine(line);
+          if (clean) {
+            console.log(`[AGY Out] ${clean}`);
+          }
+        }
+      });
+
+      cp.stderr.on('data', (data) => {
+        const text = data.toString();
+        stderrBuffer += text;
+
+        stderrLogBuffer += text;
+        let lines = stderrLogBuffer.split(/\r?\n/);
+        stderrLogBuffer = lines.pop() || '';
+
+        for (const line of lines) {
+          const clean = cleanAndFilterLine(line);
+          if (clean) {
+            console.error(`[AGY Err] ${clean}`);
+          }
+        }
+      });
+
+      cp.on('close', async (code) => {
+        const elapsed = Date.now() - startTime;
+        console.log(`[AGY Closed] Exit code: ${code}, elapsed: ${elapsed}ms`);
+
+        // Flush any remaining buffered log lines
+        if (stdoutLogBuffer) {
+          const clean = cleanAndFilterLine(stdoutLogBuffer);
+          if (clean) console.log(`[AGY Out] ${clean}`);
+        }
+        if (stderrLogBuffer) {
+          const clean = cleanAndFilterLine(stderrLogBuffer);
+          if (clean) console.error(`[AGY Err] ${clean}`);
+        }
+
+        // Remove from activeProcesses
+        activeProcesses.delete(session.id);
+
+        // Fallback: if closed with error and we haven't already notified
+        if (code !== 0 && !cp.errorNotified) {
+          await notifyError(cp.stdoutBuffer + stderrBuffer || `AGY exited with code ${code}`);
+        }
+      });
+      return;
+    }
+
     if (command === '/model') {
       if (!arg) {
         const info = injector.getModelsInfo();
