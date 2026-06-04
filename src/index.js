@@ -716,6 +716,7 @@ export const messageHandler = async ({ chatId, senderId, text, isP2P }) => {
       }
       const cp = activeProcesses.get(session.id);
       if (cp) {
+        cp.errorNotified = true;
         try { cp.kill('SIGTERM'); } catch (e) {}
         activeProcesses.delete(session.id);
         await feishu.sendTextMessage(chatId, t('stop_success', session.id));
@@ -736,6 +737,7 @@ export const messageHandler = async ({ chatId, senderId, text, isP2P }) => {
         for (const s of list) {
           const cp = activeProcesses.get(s.id);
           if (cp) {
+            cp.errorNotified = true;
             try { cp.kill('SIGTERM'); } catch (e) {}
             activeProcesses.delete(s.id);
           }
@@ -753,6 +755,7 @@ export const messageHandler = async ({ chatId, senderId, text, isP2P }) => {
       }
       const cp = activeProcesses.get(session.id);
       if (cp) {
+        cp.errorNotified = true;
         try { cp.kill('SIGTERM'); } catch (e) {}
         activeProcesses.delete(session.id);
       }
