@@ -206,10 +206,24 @@ export const messageHandler = async ({ chatId, senderId, text, isP2P }) => {
 
       // On macOS, we wrap the spawn using python3's pty module to allocate a pseudo-terminal (PTY).
       // This prevents agy from deadlocking on reading stdin, and satisfies Bubble Tea's TTY requirements.
+      // We explicitly configure the PTY window size to 80 columns and 24 rows to ensure the Bubble Tea TUI
+      // renders and focuses its text inputs correctly.
       const isMac = process.platform === 'darwin';
       const cmd = isMac ? 'python3' : 'agy';
       const spawnArgs = isMac 
-        ? ['-c', 'import pty, sys; pty.spawn(sys.argv[1:])', 'agy', '-i', arg]
+        ? [
+            '-c',
+            'import pty, os, sys, fcntl, termios, struct;\n' +
+            'pid, fd = pty.fork()\n' +
+            'if pid == 0:\n' +
+            '    try: fcntl.ioctl(1, termios.TIOCSWINSZ, struct.pack("HHHH", 24, 80, 0, 0))\n' +
+            '    except: pass\n' +
+            '    os.execlp(sys.argv[1], *sys.argv[1:])\n' +
+            'else:\n' +
+            '    try: pty._copy(fd)\n' +
+            '    except: pass',
+            'agy', '-i', arg
+          ]
         : ['-i', arg];
 
       const cp = spawn(cmd, spawnArgs, {
