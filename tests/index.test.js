@@ -371,12 +371,12 @@ describe('Session management index commands', () => {
     const startTime2 = new Date('2026-06-03T12:05:00Z');
 
     mockList.mockReturnValue([
-      { id: 'session-2', startTime: startTime2 },
+      { id: '1aee16b2-1336-4464-96aa-279630dd936b', startTime: startTime2 },
       { id: 'session-1', startTime: startTime1 }
     ]);
     mockGet.mockImplementation((id) => {
       if (id === 'session-1') return { id: 'session-1', startTime: startTime1 };
-      if (id === 'session-2') return { id: 'session-2', startTime: startTime2 };
+      if (id === '1aee16b2-1336-4464-96aa-279630dd936b') return { id: '1aee16b2-1336-4464-96aa-279630dd936b', startTime: startTime2 };
       return null;
     });
     mockSetDefault.mockReturnValue(true);
@@ -392,23 +392,23 @@ describe('Session management index commands', () => {
     });
     expect(mockSetDefault).toHaveBeenCalledWith('session-1');
 
-    // Switch by index 2 (session-2)
+    // Switch by index 2 (1aee16b2-...)
     await messageHandler({
       chatId: 'test-chat-id',
       senderId: 'user-123',
       text: '/switch 2',
       isP2P: false
     });
-    expect(mockSetDefault).toHaveBeenCalledWith('session-2');
+    expect(mockSetDefault).toHaveBeenCalledWith('1aee16b2-1336-4464-96aa-279630dd936b');
 
-    // Switch by UUID
+    // Switch by UUID starting with a digit
     await messageHandler({
       chatId: 'test-chat-id',
       senderId: 'user-123',
-      text: '/switch session-2',
+      text: '/switch 1aee16b2-1336-4464-96aa-279630dd936b',
       isP2P: false
     });
-    expect(mockSetDefault).toHaveBeenCalledWith('session-2');
+    expect(mockSetDefault).toHaveBeenCalledWith('1aee16b2-1336-4464-96aa-279630dd936b');
   });
 
   it('should stop session by index (SIGTERM kill, keep in registry)', async () => {

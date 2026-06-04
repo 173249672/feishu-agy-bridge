@@ -241,9 +241,11 @@ watcher.on('error', (err) => {
 function resolveSession(arg) {
   if (!arg) return null;
   const list = registry.list().sort((a, b) => a.startTime - b.startTime);
-  const idx = parseInt(arg, 10);
-  if (!isNaN(idx) && idx >= 1 && idx <= list.length) {
-    return list[idx - 1];
+  if (/^\d+$/.test(arg)) {
+    const idx = parseInt(arg, 10);
+    if (idx >= 1 && idx <= list.length) {
+      return list[idx - 1];
+    }
   }
   return registry.get(arg) || null;
 }
