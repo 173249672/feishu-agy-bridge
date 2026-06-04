@@ -106,7 +106,7 @@ describe('index.js session:permission handler', () => {
     const fakeRegistry = { feishuChatId: chatId, status: 'busy', lastPermissionIdx: undefined, lastPermissionKey: undefined, lastMessageId: null };
     vi.spyOn(watcher, 'emit').mockReturnValue(true);
 
-    const buildPermissionCardSpy = vi.spyOn(CardBuilder, 'buildPermissionCard').mockReturnValue({ header: {}, elements: [] });
+    const buildPermissionNotifyCardSpy = vi.spyOn(CardBuilder, 'buildPermissionNotifyCard').mockReturnValue({ header: {}, elements: [] });
     const sendInteractiveCardSpy = vi.spyOn(feishu, 'sendInteractiveCard').mockResolvedValue('msg-001');
 
     // Simulate calling the session:permission handler directly
@@ -122,7 +122,7 @@ describe('index.js session:permission handler', () => {
     // Invoke the handler
     await listeners[0].call(watcher, { sessionId, idx, reason });
 
-    expect(buildPermissionCardSpy).toHaveBeenCalledWith(sessionId, idx, reason, null);
+    expect(buildPermissionNotifyCardSpy).toHaveBeenCalledWith(sessionId, idx, reason, null);
     expect(sendInteractiveCardSpy).toHaveBeenCalledWith(chatId, expect.any(Object));
     expect(fakeRegistry.status).toBe('waiting_permission');
     expect(fakeRegistry.lastPermissionIdx).toBe(idx);
@@ -200,13 +200,13 @@ settings.json)
     };
     activeProcesses.set(sessionId, mockCp);
 
-    const buildPermissionCardSpy = vi.spyOn(CardBuilder, 'buildPermissionCard').mockReturnValue({ header: {}, elements: [] });
+    const buildPermissionNotifyCardSpy = vi.spyOn(CardBuilder, 'buildPermissionNotifyCard').mockReturnValue({ header: {}, elements: [] });
     const sendInteractiveCardSpy = vi.spyOn(feishu, 'sendInteractiveCard').mockResolvedValue('msg-multiline');
 
     const listeners = watcher.rawListeners('session:permission');
     await listeners[0].call(watcher, { sessionId, idx, reason });
 
-    expect(buildPermissionCardSpy).toHaveBeenCalledWith(
+    expect(buildPermissionNotifyCardSpy).toHaveBeenCalledWith(
       sessionId,
       idx,
       reason,
@@ -602,18 +602,7 @@ describe('Session management index commands', () => {
     expect(res.card.data.header.title.content).toContain('Settings');
   });
 
-  it('should handle approve_option action in actionHandler', async () => {
-    const mockWrite = vi.fn();
-    const mockCp = {
-      stdin: {
-        writable: true,
-        write: mockWrite
-      }
-    };
-    activeProcesses.set('test-session-123', mockCp);
-
-    const injectMessageSpy = vi.spyOn(injector, 'injectMessage').mockReturnValue('msg-uuid');
-
+  it('should reject non-settings actions in actionHandler', async () => {
     const res = await actionHandler({
       actionType: 'approve_option',
       sessionId: 'test-session-123',
@@ -623,10 +612,7 @@ describe('Session management index commands', () => {
       operatorId: 'ou_test-operator'
     });
 
-    expect(injectMessageSpy).toHaveBeenCalledWith('test-session-123', 'Yes, and always allow non-workspace access');
-    expect(mockWrite).toHaveBeenCalledWith('\x1b[B\r');
-    expect(res.toast.content).toBe('Select 2');
-    expect(res.card.data.header.title.content).toBe('✅ AGY Action Confirmed');
-    expect(res.card.data.elements[0].text.content).toContain('2️⃣ Yes, and always allow non-workspace access');
+    expect(res.toast.type).toBe('error');
+    expect(res.toast.content).toBe('Unsupported action in notify-only mode.');
   });
 });

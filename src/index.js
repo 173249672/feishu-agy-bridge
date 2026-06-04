@@ -90,10 +90,12 @@ watcher.on('session:question', async ({ sessionId, idx, questionData }) => {
   session.lastQuestionIdx = idx;
 
   session.status = 'waiting_input';
-  const card = CardBuilder.buildQuestionCard(sessionId, idx, questionData);
+  // Notify-only: no buttons — user selects in local terminal
+  const card = CardBuilder.buildQuestionNotifyCard(sessionId, idx, questionData);
   const msgId = await feishu.sendInteractiveCard(session.feishuChatId, card);
   session.lastMessageId = msgId;
 });
+
 
 function parsePermissionOptions(stdout) {
   if (!stdout) return null;
@@ -165,10 +167,12 @@ watcher.on('session:permission', async ({ sessionId, idx, reason }) => {
     options = parsePermissionOptions(cp.stdoutBuffer);
   }
 
-  const card = CardBuilder.buildPermissionCard(sessionId, idx, reason, options);
+  // Notify-only: no approve/reject buttons — user handles in local terminal
+  const card = CardBuilder.buildPermissionNotifyCard(sessionId, idx, reason, options);
   const msgId = await feishu.sendInteractiveCard(session.feishuChatId, card);
   session.lastMessageId = msgId;
 });
+
 
 watcher.on('session:agy_error', async ({ sessionId, idx, message }) => {
   console.error(`[Watcher][${sessionId}] AGY error at step #${idx}: ${message}`);
@@ -516,172 +520,30 @@ export const messageHandler = async ({ chatId, senderId, text, isP2P }) => {
   }
 };
 
-// Actions that control AGY processes and require strict identity validation
-const AGY_CONTROL_ACTIONS = new Set(['answer', 'approve', 'reject', 'approve_option']);
-// Session ID format guard (used for path traversal prevention)
-const SESSION_ID_RE = /^[a-zA-Z0-9_-]{8,128}$/;
-
-// Cache of authorised open_ids (members of the default chat).
-// We re-use the same chatId-based allowlist: only the bot owner's direct
-// messages are accepted. Card actions carry operatorId (open_id) from Feishu;
-// we validate it is the same sender who created the session (i.e. came from
-// the authorised chat). A simple guard: reject any action whose operatorId is
-// absent or whose sessionId fails our format rules.
+// Settings-only action handler.
+// In local-cli-notify mode, no interactive permission/question cards are sent,
+// so only settings actions (set_lang, set_theme, toggle_widescreen) can arrive here.
 export const actionHandler = async (params) => {
-  const { actionType, sessionId, stepIndex, operatorId, messageId } = params;
-  console.log(`[Feishu Action] ${actionType} for session ${sessionId} step #${stepIndex} by ${operatorId}`);
+  const { actionType } = params;
+  console.log(`[Feishu Action] ${actionType}`);
 
-  // Settings actions don't touch AGY processes and have no sessionId — handle first
-  if (actionType === 'set_lang' || actionType === 'set_theme' || actionType === 'toggle_widescreen') {
-    if (actionType === 'set_lang') {
-      settingsManager.set('language', params.lang);
-    } else if (actionType === 'set_theme') {
-      settingsManager.set('theme', params.theme);
-    } else if (actionType === 'toggle_widescreen') {
-      settingsManager.set('wideScreen', params.wideScreen);
-    }
-
-    const updatedCard = CardBuilder.buildSettingsCard();
-    return {
-      toast: {
-        type: 'success',
-        content: t('settings_save_toast')
-      },
-      card: {
-        type: 'raw',
-        data: updatedCard
-      }
-    };
+  if (actionType === 'set_lang') {
+    settingsManager.set('language', params.lang);
+  } else if (actionType === 'set_theme') {
+    settingsManager.set('theme', params.theme);
+  } else if (actionType === 'toggle_widescreen') {
+    settingsManager.set('wideScreen', params.wideScreen);
+  } else {
+    return { toast: { type: 'error', content: 'Unsupported action in notify-only mode.' } };
   }
 
-  // For all AGY process-control actions: validate sessionId format and operatorId presence
-  if (AGY_CONTROL_ACTIONS.has(actionType)) {
-    if (!sessionId || !SESSION_ID_RE.test(sessionId)) {
-      console.warn(`[Security] actionHandler rejected invalid sessionId: "${sessionId}"`);
-      return { toast: { type: 'error', content: 'Invalid session.' } };
-    }
-    if (!operatorId) {
-      console.warn('[Security] actionHandler rejected action with no operatorId');
-      return { toast: { type: 'error', content: 'Unauthorized.' } };
-    }
-  }
-
-  if (actionType === 'answer') {
-    const { optionIndex, text } = params;
-    console.log(`[Feishu Action] Answer selected: idx=${optionIndex}, text=${text}`);
-    
-    injector.injectMessage(sessionId, text);
-
-    const cp = activeProcesses.get(sessionId);
-    if (cp && cp.stdin.writable) {
-      cp.stdin.write(`\r`);
-    }
-
-    const updatedCard = {
-      config: { wide_screen_mode: settingsManager.get('wideScreen') !== false },
-      header: {
-        template: 'green',
-        title: { tag: 'plain_text', content: t('card_confirm_title') }
-      },
-      elements: [
-        {
-          tag: 'div',
-          text: {
-            tag: 'lark_md',
-            content: `**${t('card_session_id')}**: \`${sessionId}\`\n**${t('card_step')}**: #${stepIndex}\n\n**${t('card_your_choice')}**: \n${optionIndex + 1}️⃣ ${text}`
-          }
-        }
-      ]
-    };
-
-    return {
-      toast: {
-        type: 'success',
-        content: `${t('card_question_btn_prefix')}${optionIndex + 1}`
-      },
-      card: {
-        type: 'raw',
-        data: updatedCard
-      }
-    };
-  }
-
-  if (actionType === 'approve_option') {
-    const { optionIndex, text } = params;
-    console.log(`[Feishu Action] Permission Option selected: idx=${optionIndex}, text=${text}`);
-
-    injector.injectMessage(sessionId, text);
-
-    const cp = activeProcesses.get(sessionId);
-    if (cp && cp.stdin.writable) {
-      cp.stdin.write('\x1b[B'.repeat(optionIndex) + '\r');
-    }
-
-    const updatedCard = {
-      config: { wide_screen_mode: settingsManager.get('wideScreen') !== false },
-      header: {
-        template: 'green',
-        title: { tag: 'plain_text', content: t('card_permission_approved') }
-      },
-      elements: [
-        {
-          tag: 'div',
-          text: {
-            tag: 'lark_md',
-            content: `**${t('card_session_id')}**: \`${sessionId}\`\n**${t('card_step')}**: #${stepIndex}\n\n**${t('card_result')}**: ${t('card_permission_handled_suffix')}\n**${t('card_your_choice')}**: \n${optionIndex + 1}️⃣ ${text}`
-          }
-        }
-      ]
-    };
-
-    return {
-      toast: {
-        type: 'success',
-        content: `${t('card_question_btn_prefix')}${optionIndex + 1}`
-      },
-      card: {
-        type: 'raw',
-        data: updatedCard
-      }
-    };
-  }
-
-  const responseText = actionType === 'approve' ? 'y' : 'n';
-  injector.injectMessage(sessionId, responseText);
-
-  const cp = activeProcesses.get(sessionId);
-  if (cp && cp.stdin.writable) {
-    cp.stdin.write(`${responseText}${newline}`);
-  }
-
-  const updatedCard = {
-    config: { wide_screen_mode: settingsManager.get('wideScreen') !== false },
-    header: {
-      template: actionType === 'approve' ? 'green' : 'grey',
-      title: { tag: 'plain_text', content: actionType === 'approve' ? t('card_permission_approved') : t('card_permission_rejected') }
-    },
-    elements: [
-      {
-        tag: 'div',
-        text: {
-          tag: 'lark_md',
-          content: `**${t('card_session_id')}**: \`${sessionId}\`\n**${t('card_step')}**: #${stepIndex}\n\n**${t('card_result')}**: ${t('card_permission_handled_suffix')}`
-        }
-      }
-    ]
-  };
-
+  const updatedCard = CardBuilder.buildSettingsCard();
   return {
-    toast: {
-      type: 'success',
-      content: `Submitted: ${actionType.toUpperCase()}`
-    },
-    card: {
-      type: 'raw',
-      data: updatedCard
-    }
+    toast: { type: 'success', content: t('settings_save_toast') },
+    card: { type: 'raw', data: updatedCard }
   };
 };
+
 
 async function main() {
   console.log('Starting Feishu-AGY Bridge...');

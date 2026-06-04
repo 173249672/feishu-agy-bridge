@@ -10,66 +10,37 @@ function getCardConfig(defaultColor) {
   };
 }
 
-export function buildPermissionCard(sessionId, stepIndex, reason, options = null) {
+export function buildPermissionNotifyCard(sessionId, stepIndex, reason, options = null) {
   const cfg = getCardConfig('yellow');
-  
-  const cardElements = [
-    {
-      tag: 'div',
-      text: {
-        tag: 'lark_md',
-        content: `**${t('card_session_id')}**: \`${sessionId}\`\n**${t('card_step')}**: #${stepIndex}\n\n**${t('card_reason')}**:\n${reason}`
-      }
-    }
-  ];
 
+  let optionsBlock = '';
   if (options && options.length > 0) {
-    const buttons = options.map((opt, idx) => {
-      return {
-        tag: 'button',
-        text: { tag: 'plain_text', content: opt.text },
-        type: idx === 0 ? 'primary' : 'default',
-        value: {
-          action: 'approve_option',
-          sessionId,
-          stepIndex,
-          optionIndex: idx,
-          text: opt.text
-        }
-      };
-    });
-
-    cardElements.push({
-      tag: 'action',
-      actions: buttons
-    });
-  } else {
-    cardElements.push({
-      tag: 'action',
-      actions: [
-        {
-          tag: 'button',
-          text: { tag: 'plain_text', content: `✅ ${t('card_permission_confirm')}` },
-          type: 'primary',
-          value: { action: 'approve', sessionId, stepIndex }
-        },
-        {
-          tag: 'button',
-          text: { tag: 'plain_text', content: `❌ ${t('card_permission_cancel')}` },
-          type: 'danger',
-          value: { action: 'reject', sessionId, stepIndex }
-        }
-      ]
-    });
+    optionsBlock = `\n\n**${t('card_permission_options_label')}**:\n` +
+      options.map((opt, idx) => `${idx + 1}\ufe0f\u20e3 ${opt.text}`).join('\n');
   }
 
   return {
     config: { wide_screen_mode: cfg.wideScreen },
     header: {
       template: cfg.template,
-      title: { tag: 'plain_text', content: t('card_permission_title') }
+      title: { tag: 'plain_text', content: t('card_permission_notify_title') }
     },
-    elements: cardElements
+    elements: [
+      {
+        tag: 'div',
+        text: {
+          tag: 'lark_md',
+          content: `**${t('card_session_id')}**: \`${sessionId}\`\n**${t('card_step')}**: #${stepIndex}\n\n**${t('card_reason')}**:\n${reason}${optionsBlock}`
+        }
+      },
+      {
+        tag: 'div',
+        text: {
+          tag: 'lark_md',
+          content: `> ${t('card_permission_notify_tip')}`
+        }
+      }
+    ]
   };
 }
 
@@ -136,36 +107,21 @@ export function buildStatusCard(sessionId, statusText) {
   };
 }
 
-export function buildQuestionCard(sessionId, stepIndex, questionData) {
+export function buildQuestionNotifyCard(sessionId, stepIndex, questionData) {
   const cfg = getCardConfig('violet');
   const firstQuestion = questionData.questions[0];
   const questionText = firstQuestion.question;
   const options = firstQuestion.options;
-  
-  const optionsMarkdown = options.map((opt, idx) => {
-    return `${idx + 1}️⃣ ${opt}`;
-  }).join('\n\n');
 
-  const buttons = options.map((opt, idx) => {
-    return {
-      tag: 'button',
-      text: { tag: 'plain_text', content: `${t('card_question_btn_prefix')}${idx + 1}` },
-      type: 'primary',
-      value: { 
-        action: 'answer', 
-        sessionId, 
-        stepIndex, 
-        optionIndex: idx, 
-        text: opt 
-      }
-    };
-  });
+  const optionsMarkdown = options.map((opt, idx) => {
+    return `${idx + 1}\ufe0f\u20e3 ${opt}`;
+  }).join('\n\n');
 
   return {
     config: { wide_screen_mode: cfg.wideScreen },
     header: {
       template: cfg.template,
-      title: { tag: 'plain_text', content: t('card_question_title') }
+      title: { tag: 'plain_text', content: t('card_question_notify_title') }
     },
     elements: [
       {
@@ -176,8 +132,11 @@ export function buildQuestionCard(sessionId, stepIndex, questionData) {
         }
       },
       {
-        tag: 'action',
-        actions: buttons
+        tag: 'div',
+        text: {
+          tag: 'lark_md',
+          content: `> ${t('card_question_notify_tip')}`
+        }
       }
     ]
   };
