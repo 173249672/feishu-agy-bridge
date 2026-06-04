@@ -102,6 +102,28 @@ watcher.on('session:question', async ({ sessionId, idx, questionData }) => {
   session.lastMessageId = msgId;
 });
 
+function cleanAndFilterLine(line) {
+  if (!line) return null;
+  const subparts = line.split('\r');
+  
+  for (let i = subparts.length - 1; i >= 0; i--) {
+    const clean = subparts[i]
+      .replace(/\x1b\[[?0-9;]*[a-zA-Z]/g, '')
+      .replace(/[\u2800-\u28FF]/g, '')
+      .replace(/[\x00-\x1f\x7f]/g, '')
+      .trim();
+
+    if (clean) {
+      const progressPattern = /^(?:generating|thinking)\.*$/i;
+      if (progressPattern.test(clean)) {
+        return null;
+      }
+      return clean;
+    }
+  }
+  return null;
+}
+
 function parsePermissionOptions(stdout) {
   if (!stdout) return null;
   const clean = stdout.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '');
@@ -341,16 +363,9 @@ export const messageHandler = async ({ chatId, senderId, text, isP2P }) => {
         stdoutLogBuffer = lines.pop() || '';
 
         for (const line of lines) {
-          const subparts = line.split('\r');
-          for (const part of subparts) {
-            const clean = part
-              .replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '')
-              .replace(/[\u2800-\u28FF]/g, '')
-              .replace(/[\x00-\x1f\x7f]/g, '')
-              .trim();
-            if (clean) {
-              console.log(`[AGY Out] ${clean}`);
-            }
+          const clean = cleanAndFilterLine(line);
+          if (clean) {
+            console.log(`[AGY Out] ${clean}`);
           }
         }
       });
@@ -364,16 +379,9 @@ export const messageHandler = async ({ chatId, senderId, text, isP2P }) => {
         stderrLogBuffer = lines.pop() || '';
 
         for (const line of lines) {
-          const subparts = line.split('\r');
-          for (const part of subparts) {
-            const clean = part
-              .replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '')
-              .replace(/[\u2800-\u28FF]/g, '')
-              .replace(/[\x00-\x1f\x7f]/g, '')
-              .trim();
-            if (clean) {
-              console.error(`[AGY Err] ${clean}`);
-            }
+          const clean = cleanAndFilterLine(line);
+          if (clean) {
+            console.error(`[AGY Err] ${clean}`);
           }
         }
       });
@@ -384,26 +392,12 @@ export const messageHandler = async ({ chatId, senderId, text, isP2P }) => {
 
         // Flush any remaining buffered log lines
         if (stdoutLogBuffer) {
-          const subparts = stdoutLogBuffer.split('\r');
-          for (const part of subparts) {
-            const clean = part
-              .replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '')
-              .replace(/[\u2800-\u28FF]/g, '')
-              .replace(/[\x00-\x1f\x7f]/g, '')
-              .trim();
-            if (clean) console.log(`[AGY Out] ${clean}`);
-          }
+          const clean = cleanAndFilterLine(stdoutLogBuffer);
+          if (clean) console.log(`[AGY Out] ${clean}`);
         }
         if (stderrLogBuffer) {
-          const subparts = stderrLogBuffer.split('\r');
-          for (const part of subparts) {
-            const clean = part
-              .replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '')
-              .replace(/[\u2800-\u28FF]/g, '')
-              .replace(/[\x00-\x1f\x7f]/g, '')
-              .trim();
-            if (clean) console.error(`[AGY Err] ${clean}`);
-          }
+          const clean = cleanAndFilterLine(stderrLogBuffer);
+          if (clean) console.error(`[AGY Err] ${clean}`);
         }
 
         // Remove from activeProcesses
