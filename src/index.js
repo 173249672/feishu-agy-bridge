@@ -435,14 +435,14 @@ export const actionHandler = async (params) => {
     }
 
     const updatedCard = CardBuilder.buildSettingsCard();
-    feishu.updateCard(messageId, updatedCard).catch(err => {
-      console.error(`Failed to update settings card: ${err.message}`);
-    });
-
     return {
       toast: {
         type: 'success',
         content: t('settings_save_toast')
+      },
+      card: {
+        type: 'raw',
+        data: updatedCard
       }
     };
   }
@@ -475,14 +475,14 @@ export const actionHandler = async (params) => {
       ]
     };
 
-    feishu.updateCard(messageId, updatedCard).catch(err => {
-      console.error(`[Feishu Action] Failed to update card asynchronously: ${err.message}`);
-    });
-
     return {
       toast: {
         type: 'success',
         content: `${t('card_question_btn_prefix')}${optionIndex + 1}`
+      },
+      card: {
+        type: 'raw',
+        data: updatedCard
       }
     };
   }
@@ -512,14 +512,14 @@ export const actionHandler = async (params) => {
     ]
   };
 
-  feishu.updateCard(messageId, updatedCard).catch(err => {
-    console.error(`[Feishu Action] Failed to update card asynchronously: ${err.message}`);
-  });
-
   return {
     toast: {
       type: 'success',
       content: `Submitted: ${actionType.toUpperCase()}`
+    },
+    card: {
+      type: 'raw',
+      data: updatedCard
     }
   };
 };

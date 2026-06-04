@@ -493,9 +493,7 @@ describe('Session management index commands', () => {
     expect(card.header.title.content).toContain('Settings');
   });
 
-  it('should handle settings actions in actionHandler', async () => {
-    const updateCardSpy = vi.spyOn(feishu, 'updateCard').mockResolvedValue(undefined);
-
+  it('should handle settings actions in actionHandler and return updated card synchronously', async () => {
     const res = await actionHandler({
       actionType: 'set_lang',
       lang: 'en',
@@ -503,7 +501,8 @@ describe('Session management index commands', () => {
     });
 
     expect(settingsManager.get('language')).toBe('en');
-    expect(updateCardSpy).toHaveBeenCalled();
     expect(res.toast.content).toBe('Settings updated');
+    expect(res.card.type).toBe('raw');
+    expect(res.card.data.header.title.content).toContain('Settings');
   });
 });
