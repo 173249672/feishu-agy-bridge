@@ -7,7 +7,7 @@ This design document details the enhancement of the session management commands 
 - Modify `/stop` to only terminate the running agy process, preserving the session metadata in the registry list.
 - Modify `/list` to return 1-based index numbers sorted by `startTime` (ascending), with visual indicators for process running states (`🟢` vs `⚪`).
 - Support index-based lookup in `/switch`, `/stop`, and the new `/del` commands.
-- Implement `/del <idx or session-id>` and `/del all` to stop running processes and completely remove session metadata from the registry.
+- Implement `/del <idx or session-id>` and `/del all` to stop running processes, delete their physical session files on disk from the agy directories, and completely remove session metadata from the registry.
 
 ## Components and Architecture
 
@@ -21,6 +21,16 @@ A helper function `resolveSession` will translate a string parameter into a sess
 - `SessionRegistry` stores session metadata.
 - `activeProcesses` (in-memory Map) maps a sessionId to its running process instance (`ChildProcess`).
 
+### Session File Deletion (agy Integration)
+On `/del`, we will delete:
+1. Brain directory: `path.join(config.agy.brainDir, sessionId)`
+2. Database files in conversations directory:
+   - `path.join(watcher.conversationsDir, `${sessionId}.db`)`
+   - `path.join(watcher.conversationsDir, `${sessionId}.db-wal`)`
+   - `path.join(watcher.conversationsDir, `${sessionId}.db-shm`)`
+
+We also remove the session from `watcher.knownSessions` so it can be re-registered if recreated.
+
 ## Verification Plan
 
 ### Automated tests
@@ -28,4 +38,4 @@ We will add unit tests in `tests/index.test.js` to assert the following behavior
 - `/list` displays 1-based indices, running state indicators (`🟢` / `⚪`), and default indicators (`⭐`).
 - `/switch` switches using either index or UUID.
 - `/stop` kills process and keeps session in registry.
-- `/del` kills process and removes session from registry (supporting index, UUID, and `all`).
+- `/del` kills process, deletes files, and removes session from registry (supporting index, UUID, and `all`).
