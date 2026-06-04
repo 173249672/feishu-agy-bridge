@@ -1,5 +1,7 @@
 # Feishu-AGY Bridge
 
+[中文文档 (Chinese Version)](README.zh-CN.md)
+
 `feishu-agy-bridge` is a Node.js daemon that connects Antigravity CLI (`agy`) sessions with Feishu (Lark), enabling real-time status monitoring, alert forwarding, and interactive command execution directly from Feishu chat.
 
 > [!NOTE]

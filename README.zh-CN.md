@@ -1,5 +1,7 @@
 # 飞书 - AGY 桥接器 (Feishu-AGY Bridge)
 
+[English Version](README.md)
+
 `feishu-agy-bridge` 是一个基于 Node.js 的守护进程，它将本地的 Antigravity CLI (`agy`) 会话与飞书（Lark）机器人连接起来。让用户可以直接在飞书聊天中接收 agy 的实时状态监视、告警推送，并直接与会话进行交互。
 
 > [!NOTE]
