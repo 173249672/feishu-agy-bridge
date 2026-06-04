@@ -2,6 +2,9 @@
 
 [中文文档 (Chinese Version)](README.zh-CN.md)
 
+> [!IMPORTANT]
+> **New SDK-based version**: A cleaner, native integration built on the Google Antigravity Python SDK is available at [feishu-agy-sdk-bridge](file:///Users/emu/Desktop/feishu-agy-sdk-bridge).
+
 `feishu-agy-bridge` is a Node.js daemon that connects Antigravity CLI (`agy`) sessions with Feishu (Lark), enabling real-time status monitoring, alert forwarding, and interactive command execution directly from Feishu chat.
 
 > [!NOTE]

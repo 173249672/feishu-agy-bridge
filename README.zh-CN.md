@@ -2,6 +2,9 @@
 
 [English Version](README.md)
 
+> [!IMPORTANT]
+> **全新的 SDK 原生开发版本**：基于 Google Antigravity Python SDK 实现的更纯粹、更稳定的原生飞书机器人版本已发布于 [feishu-agy-sdk-bridge](file:///Users/emu/Desktop/feishu-agy-sdk-bridge)。
+
 `feishu-agy-bridge` 是一个基于 Node.js 的守护进程，它将本地的 Antigravity CLI (`agy`) 会话与飞书（Lark）机器人连接起来。让用户可以直接在飞书聊天中接收 agy 的实时状态监视、告警推送，并直接与会话进行交互。
 
 > [!NOTE]

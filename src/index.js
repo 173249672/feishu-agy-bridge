@@ -329,21 +329,82 @@ export const messageHandler = async ({ chatId, senderId, text, isP2P }) => {
         await feishu.sendTextMessage(chatId, t('new_fail', shortError.slice(0, 300)));
       };
 
+      let stdoutLogBuffer = '';
+      let stderrLogBuffer = '';
+
       cp.stdout.on('data', (data) => {
         const text = data.toString();
-        console.log(`[AGY Out]: ${text}`);
         cp.stdoutBuffer += text;
+
+        stdoutLogBuffer += text;
+        let lines = stdoutLogBuffer.split(/\r?\n/);
+        stdoutLogBuffer = lines.pop() || '';
+
+        for (const line of lines) {
+          const subparts = line.split('\r');
+          for (const part of subparts) {
+            const clean = part
+              .replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '')
+              .replace(/[\u2800-\u28FF]/g, '')
+              .replace(/[\x00-\x1f\x7f]/g, '')
+              .trim();
+            if (clean) {
+              console.log(`[AGY Out] ${clean}`);
+            }
+          }
+        }
       });
 
       cp.stderr.on('data', (data) => {
         const text = data.toString();
-        console.error(`[AGY Err]: ${text}`);
         stderrBuffer += text;
+
+        stderrLogBuffer += text;
+        let lines = stderrLogBuffer.split(/\r?\n/);
+        stderrLogBuffer = lines.pop() || '';
+
+        for (const line of lines) {
+          const subparts = line.split('\r');
+          for (const part of subparts) {
+            const clean = part
+              .replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '')
+              .replace(/[\u2800-\u28FF]/g, '')
+              .replace(/[\x00-\x1f\x7f]/g, '')
+              .trim();
+            if (clean) {
+              console.error(`[AGY Err] ${clean}`);
+            }
+          }
+        }
       });
 
       cp.on('close', async (code) => {
         const elapsed = Date.now() - startTime;
         console.log(`[AGY Closed] Exit code: ${code}, elapsed: ${elapsed}ms`);
+
+        // Flush any remaining buffered log lines
+        if (stdoutLogBuffer) {
+          const subparts = stdoutLogBuffer.split('\r');
+          for (const part of subparts) {
+            const clean = part
+              .replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '')
+              .replace(/[\u2800-\u28FF]/g, '')
+              .replace(/[\x00-\x1f\x7f]/g, '')
+              .trim();
+            if (clean) console.log(`[AGY Out] ${clean}`);
+          }
+        }
+        if (stderrLogBuffer) {
+          const subparts = stderrLogBuffer.split('\r');
+          for (const part of subparts) {
+            const clean = part
+              .replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '')
+              .replace(/[\u2800-\u28FF]/g, '')
+              .replace(/[\x00-\x1f\x7f]/g, '')
+              .trim();
+            if (clean) console.error(`[AGY Err] ${clean}`);
+          }
+        }
 
         // Remove from activeProcesses
         for (const [sid, processCp] of activeProcesses.entries()) {
